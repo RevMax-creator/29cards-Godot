@@ -1,0 +1,20 @@
+# Godot 4+ 
+.godot/
+
+# Exported builds & sensitive export configs
+builds/
+export/
+export_presets.cfg
+
+# Android build artifacts
+android/build/
+
+# C# / .NET build outputs & IDE files
+bin/
+obj/
+.vs/
+*.csproj.user
+
+# OS metadata
+Thumbs.db
+.DS_Store
