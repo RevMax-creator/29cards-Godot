@@ -20,11 +20,18 @@ run/main_scene="res://src/ui/app_shell.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.0392157, 0.054902, 0.0901961, 1)
 
+[audio]
+
+general/text_to_speech=true
+
 [autoload]
 
 SaveManager="*res://src/persistence/save_manager.gd"
 MultiplayerManager="*res://src/network/multiplayer_manager.gd"
 AppOrchestrator="*res://src/core/app_orchestrator.gd"
+AudioManager="*res://src/core/audio_manager.gd"
+HapticsManager="*res://src/core/haptics_manager.gd"
+PlayerProfile="*res://src/core/player_profile.gd"
 
 [display]
 

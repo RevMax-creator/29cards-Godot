@@ -1,0 +1,61 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://addons/card_fan/src/card.gd" id="1_card"]
+[ext_resource type="Texture2D" path="res://addons/card_fan/textures/default_card.png" id="2_texture"]
+
+[sub_resource type="RectangleShape2D" id="hit_shape"]
+size = Vector2(76.666664, 118)
+
+[sub_resource type="StyleBoxFlat" id="HintGlowStyle"]
+bg_color = Color(0, 0, 0, 0)
+border_color = Color(0, 0.9, 1, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+corner_radius_top_left = 9
+corner_radius_top_right = 9
+corner_radius_bottom_right = 9
+corner_radius_bottom_left = 9
+shadow_color = Color(0, 0.85, 1, 0.75)
+shadow_size = 14
+shadow_offset = Vector2(0, 0)
+
+[node name="Card" type="Control"]
+custom_minimum_size = Vector2(80, 120)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 80.0
+offset_bottom = 120.0
+script = ExtResource("1_card")
+
+[node name="CardSprite" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(1, 1)
+texture = ExtResource("2_texture")
+expand_mode = 1
+
+[node name="HitArea" type="Area2D" parent="."]
+position = Vector2(62, 88)
+scale = Vector2(1, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HitArea"]
+position = Vector2(-1.6666679, 1)
+shape = SubResource("hit_shape")
+
+
+[node name="HintGlow" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("HintGlowStyle")

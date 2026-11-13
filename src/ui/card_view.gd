@@ -6,6 +6,7 @@ signal card_selected(card_id: int)
 var card_id: int = -1
 var is_playable: bool = true
 var is_face_down: bool = false
+var _art_texture: Texture2D
 
 func setup_card(id: int, playable: bool = true, face_down: bool = false) -> void:
 	card_id = id
@@ -13,7 +14,16 @@ func setup_card(id: int, playable: bool = true, face_down: bool = false) -> void
 	is_face_down = face_down
 	custom_minimum_size = Vector2(148, 216)
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_art_texture = _load_card_art(id) if not face_down else null
 	queue_redraw()
+
+func _load_card_art(id: int) -> Texture2D:
+	if id < 0 or id > 31:
+		return null
+	var suit_names := ["spade", "heart", "club", "diamond"]
+	var asset_rank_by_domain_rank := ["7", "8", "12", "13", "10", "1", "9", "11"]
+	var path := "res://Cards/simplecard_%s_%s.png" % [suit_names[CardDefs.get_suit(id)], asset_rank_by_domain_rank[CardDefs.get_rank(id)]]
+	return load(path) as Texture2D if ResourceLoader.exists(path) else null
 
 func _gui_input(event: InputEvent) -> void:
 	if not is_playable or is_face_down:
@@ -39,8 +49,18 @@ func _draw() -> void:
 		draw_style_box(style, rect)
 		return
 
+	if _art_texture != null:
+		draw_texture_rect(_art_texture, rect, false)
+		var outline := StyleBoxFlat.new()
+		outline.bg_color = Color(0, 0, 0, 0)
+		outline.border_color = ThemePalette.ACCENT_CYAN if is_playable else Color("#C8D0D8")
+		outline.set_border_width_all(3 if is_playable else 1)
+		outline.set_corner_radius_all(14)
+		draw_style_box(outline, rect)
+		return
+
 	style.bg_color = ThemePalette.CARD_IVORY
-	style.border_color = ThemePalette.ACCENT_CYAN if is_playable else ThemePalette.TEXT_MUTED
+	style.border_color = ThemePalette.ACCENT_CYAN if is_playable else Color("#C8D0D8")
 	style.set_border_width_all(3 if is_playable else 1)
 	draw_style_box(style, rect)
 
@@ -72,9 +92,3 @@ func _draw() -> void:
 			20,
 			ThemePalette.ACCENT_WARM_GOLD.darkened(0.25)
 		)
-
-	if not is_playable:
-		var dim_style := StyleBoxFlat.new()
-		dim_style.bg_color = ThemePalette.CARD_DISABLED_OVERLAY
-		dim_style.set_corner_radius_all(16)
-		draw_style_box(dim_style, rect)

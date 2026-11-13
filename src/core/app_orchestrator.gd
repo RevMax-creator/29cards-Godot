@@ -9,8 +9,12 @@ func _ready() -> void:
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT:
+			AudioManager.suspend()
 			_flush_active_session_checkpoint()
+		NOTIFICATION_APPLICATION_RESUMED, NOTIFICATION_APPLICATION_FOCUS_IN:
+			AudioManager.resume()
 		NOTIFICATION_WM_CLOSE_REQUEST:
+			AudioManager.shutdown()
 			_flush_active_session_checkpoint()
 			get_tree().quit()
 

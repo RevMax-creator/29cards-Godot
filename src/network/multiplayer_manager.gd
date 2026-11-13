@@ -46,7 +46,10 @@ func start_solo_ai_match(difficulty: int, resume_saved: bool = false) -> void:
 		authoritative_state.session_id = "SOLO_%d" % Time.get_unix_time_from_system()
 		authoritative_state.match_seed = int(Time.get_unix_time_from_system())
 		authoritative_state.seat_is_ai = [false, true, true, true]
-		RulesEngine.start_new_hand(authoritative_state, 0, authoritative_state.match_seed)
+		var dealer_rng := RandomNumberGenerator.new()
+		dealer_rng.seed = authoritative_state.match_seed ^ 0x29A11
+		var initial_dealer: int = dealer_rng.randi_range(0, 3)
+		RulesEngine.start_new_hand(authoritative_state, initial_dealer, authoritative_state.match_seed)
 
 	_broadcast_state_from_host()
 
@@ -111,25 +114,60 @@ func _process(delta: float) -> void:
 		authoritative_state.seat_is_ai[seat] = true
 		_broadcast_state_from_host()
 
-	# 2. Drive AI turns
+	# 2. Do not let the authoritative AI play ahead of the visual deal.
+	# The deal animation can take longer than AI_THINK_DELAY_SEC.
+	if authoritative_state.deal_animation_pending:
+		_ai_turn_cooldown = 0.0
+		return
+
+	# 3. Drive AI turns
 	if authoritative_state.phase in [
 		GameState.Phase.BIDDING,
 		GameState.Phase.SET_HIDDEN_TRUMP,
 		GameState.Phase.DOUBLE_DECISION,
 		GameState.Phase.REDOUBLE_DECISION,
+		GameState.Phase.PAIR_DECISION,
 		GameState.Phase.TRICK_PLAY
 	]:
 		var turn_seat: int = authoritative_state.current_turn_seat
+		if authoritative_state.phase == GameState.Phase.REDOUBLE_DECISION:
+			var declaring_team: int = GameState.get_team(authoritative_state.high_bidder_seat)
+			var has_human_declaring_player: bool = false
+			for candidate_seat in range(4):
+				if GameState.get_team(candidate_seat) == declaring_team and not authoritative_state.seat_is_ai[candidate_seat] and not _disconnect_grace_timers.has(candidate_seat):
+					has_human_declaring_player = true
+					break
+			if has_human_declaring_player:
+				_ai_turn_cooldown = 0.0
+				return
+			# With no human on the declaring partnership, the high bidder AI
+			# makes the Redouble decision using its private trump knowledge.
+			turn_seat = authoritative_state.high_bidder_seat
 		if authoritative_state.seat_is_ai[turn_seat] and not _disconnect_grace_timers.has(turn_seat):
 			_ai_turn_cooldown += delta
 			if _ai_turn_cooldown >= AI_THINK_DELAY_SEC:
 				_ai_turn_cooldown = 0.0
 				var ai_view: Dictionary = authoritative_state.build_player_view(turn_seat)
+				ai_view["tram_available"] = RulesEngine.can_call_tram(authoritative_state, turn_seat)
 				var ai_action: Dictionary = AIController.choose_action(ai_view, ai_difficulty)
 				if ai_action.get("type", "NONE") != "NONE":
 					var res: Dictionary = RulesEngine.apply_action(authoritative_state, turn_seat, ai_action)
 					if res.get("ok", false):
 						_broadcast_state_from_host()
+
+## The table calls this only after its complete clockwise deal queue has
+## finished. Only the authoritative host may clear the game-state deal barrier.
+func notify_local_deal_animation_completed() -> void:
+	if not is_authoritative_host or authoritative_state == null:
+		return
+	if not authoritative_state.deal_animation_pending:
+		return
+	var completion: Dictionary = RulesEngine.complete_deal_animation(authoritative_state)
+	if not bool(completion.get("ok", false)):
+		push_warning("Deal animation completion was rejected: %s" % str(completion))
+		return
+	_broadcast_state_from_host()
+
 
 func _process_authoritative_action_envelope(envelope: Dictionary) -> void:
 	if authoritative_state == null:
@@ -179,6 +217,7 @@ func _broadcast_state_from_host() -> void:
 
 	for seat in range(4):
 		var sanitized_view: Dictionary = authoritative_state.build_player_view(seat)
+		sanitized_view["tram_available"] = RulesEngine.can_call_tram(authoritative_state, seat)
 		if seat == local_seat:
 			latest_player_view = sanitized_view
 			player_view_updated.emit(latest_player_view)

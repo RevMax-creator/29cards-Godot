@@ -23,6 +23,8 @@ static func choose_action(player_view: Dictionary, difficulty: int = Difficulty.
 			return _decide_double(player_view, my_hand, difficulty)
 		GameState.Phase.REDOUBLE_DECISION:
 			return _decide_redouble(player_view, my_hand)
+		GameState.Phase.PAIR_DECISION:
+			return {"type": "DECLARE_PAIR"}
 		GameState.Phase.TRICK_PLAY:
 			return _decide_trick_action(player_view, my_hand, difficulty)
 		_:
@@ -32,6 +34,12 @@ static func _decide_bid(view: Dictionary, hand: Array[int], difficulty: int) -> 
 	var current_bid: int = int(view["current_bid"])
 	var high_bidder: int = int(view["high_bidder_seat"])
 	var my_seat: int = int(view["viewer_seat"])
+	var opening_passes: int = 0
+	for passed in view.get("passed_seats", []):
+		if bool(passed):
+			opening_passes += 1
+	if high_bidder == -1 and opening_passes == 3 and my_seat == int(view.get("dealer_seat", -1)):
+		return {"type": "BID", "amount": RulesEngine.MIN_BID}
 
 	var partner_holds_bid: bool = (high_bidder == GameState.get_partner(my_seat))
 	var best_suit_eval: Dictionary = _evaluate_four_card_hand(hand)
@@ -119,36 +127,15 @@ static func _decide_redouble(view: Dictionary, hand: Array[int]) -> Dictionary:
 	return {"type": "CALL_REDOUBLE", "redouble": (trump_count >= 5 and has_trump_jack)}
 
 static func _decide_trick_action(view: Dictionary, hand: Array[int], difficulty: int) -> Dictionary:
-	var my_seat: int = int(view["viewer_seat"])
-	var trump_revealed: bool = bool(view["trump_revealed"])
-	var visible_trump: int = int(view["visible_trump_suit"])
-	var current_trick: Array = view["current_trick"]
+	# TRAM is available only when the authoritative host has proved that all
+	# remaining tricks are guaranteed for this seat.
+	if bool(view.get("tram_available", false)):
+		return {"type": "TRAM"}
 
-	# 1. Check if we hold Pair (K + Q of revealed trump) and haven't declared it yet
-	if trump_revealed and int(view["pair_declared_by_team"]) == -1 and visible_trump != CardDefs.Suit.NONE:
-		var k_card: int = CardDefs.make_card(visible_trump, CardDefs.Rank.KING)
-		var q_card: int = CardDefs.make_card(visible_trump, CardDefs.Rank.QUEEN)
-		if hand.has(k_card) and hand.has(q_card):
-			return {"type": "DECLARE_PAIR"}
+	# An off-suit play automatically reveals trump in RulesEngine. No manual
+	# REQUEST_TRUMP_REVEAL action is needed.
 
-	# 2. Check if void in led suit while trump is unrevealed
-	if not current_trick.is_empty() and not trump_revealed:
-		var led_suit: int = CardDefs.get_suit(int(current_trick[0]["card"]))
-		var has_led: bool = false
-		for c in hand:
-			if CardDefs.get_suit(c) == led_suit:
-				has_led = true
-				break
-		if not has_led:
-			var trick_pts: int = 0
-			for entry in current_trick:
-				trick_pts += CardDefs.get_points(int(entry["card"]))
-			var current_winner_seat: int = _get_current_trick_winner_from_view(current_trick, visible_trump, trump_revealed)
-			var partner_winning: bool = (current_winner_seat == GameState.get_partner(my_seat))
-			if not partner_winning and (trick_pts >= 2 or hand.size() <= 5):
-				return {"type": "REQUEST_TRUMP_REVEAL"}
-
-	# 3. Compute legal cards from player_view
+	# Compute legal cards from player_view
 	var legal_cards: Array[int] = _get_legal_cards_from_view(view, hand)
 	if legal_cards.size() == 1:
 		return {"type": "PLAY_CARD", "card": legal_cards[0]}

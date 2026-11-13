@@ -1,0 +1,60 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://addons/card_fan/src/card_set.gd" id="1_card_set"]
+[ext_resource type="PackedScene" path="res://addons/card_fan/src/joystick.tscn" id="2_joystick"]
+
+[node name="CardSet" type="Control"]
+layout_mode = 3
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -140.0
+offset_right = 300.0
+offset_bottom = -100.0
+grow_vertical = 0
+script = ExtResource("1_card_set")
+
+[node name="CardsContainer" type="Control" parent="."]
+anchors_preset = 0
+offset_left = 6.0
+offset_right = 6.0
+mouse_filter = 2
+
+[node name="DebugButtons" type="Control" parent="."]
+custom_minimum_size = Vector2(20, 0)
+anchors_preset = 0
+visible = false
+
+[node name="AddCardBtn" type="Button" parent="DebugButtons"]
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 0
+offset_left = 1.0
+offset_top = -64.0
+offset_right = 101.0
+offset_bottom = -24.0
+text = "+ 加牌"
+
+[node name="CardCountLabel" type="Label" parent="DebugButtons"]
+layout_mode = 0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = 60.0
+offset_top = 20.0
+offset_right = 240.0
+offset_bottom = 50.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 18
+text = "CardFan 调试"
+horizontal_alignment = 2
+
+[node name="RemoveCardBtn" type="Button" parent="DebugButtons"]
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 0
+offset_right = 100.0
+offset_bottom = 40.0
+text = "- 减牌"
+
+[node name="Joystick" parent="." instance=ExtResource("2_joystick")]
+layout_mode = 0

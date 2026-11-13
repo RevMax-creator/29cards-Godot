@@ -72,6 +72,19 @@ static func get_rank(card_id: int) -> int:
 static func get_points(card_id: int) -> int:
 	return CARD_POINTS.get(get_rank(card_id), 0)
 
+## Sorts a hand by suit group, then descending 29 trick-taking rank within each suit.
+## Suit order: Spades, Hearts, Clubs, Diamonds. Rank order: J, 9, A, 10, K, Q, 8, 7.
+static func sort_hand_by_suit_and_rank(card_ids: Array[int]) -> Array[int]:
+	var sorted_ids: Array[int] = card_ids.duplicate()
+	sorted_ids.sort_custom(func(a: int, b: int) -> bool:
+		var suit_a: int = CardDefs.get_suit(a)
+		var suit_b: int = CardDefs.get_suit(b)
+		if suit_a != suit_b:
+			return suit_a < suit_b
+		return CardDefs.get_rank(a) > CardDefs.get_rank(b)
+	)
+	return sorted_ids
+
 static func format_card(card_id: int) -> String:
 	if card_id < 0 or card_id > 31:
 		return "??"
