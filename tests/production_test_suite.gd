@@ -183,34 +183,77 @@ func _test_t12_deal_animation_action_barrier() -> void:
 
 
 func _test_t04_automatic_trump_revelation_on_void() -> void:
-	var state := GameState.new()
-	state.phase = GameState.Phase.TRICK_PLAY
-	state.high_bidder_seat = 1
-	state.hidden_trump_suit = CardDefs.Suit.SPADES
-	state.trump_revealed = false
-	state.trick_leader_seat = 0
-	state.current_turn_seat = 0
+	# Scenario 1: Human/Seat 1 void in lead suit with trump card -> reveals trump immediately upon turn start
+	var state1 := GameState.new()
+	state1.phase = GameState.Phase.TRICK_PLAY
+	state1.high_bidder_seat = 1
+	state1.hidden_trump_suit = CardDefs.Suit.SPADES
+	state1.trump_revealed = false
+	state1.trick_leader_seat = 0
+	state1.current_turn_seat = 0
 
 	var h7: int = CardDefs.make_card(CardDefs.Suit.HEARTS, CardDefs.Rank.SEVEN)
 	var sj: int = CardDefs.make_card(CardDefs.Suit.SPADES, CardDefs.Rank.JACK)
 	var c8: int = CardDefs.make_card(CardDefs.Suit.CLUBS, CardDefs.Rank.EIGHT)
 	var d8: int = CardDefs.make_card(CardDefs.Suit.DIAMONDS, CardDefs.Rank.EIGHT)
 
-	state.hands[0] = [h7]
-	state.hands[1] = [sj]
-	state.hands[2] = [c8]
-	state.hands[3] = [d8]
+	state1.hands[0] = [h7]
+	state1.hands[1] = [sj]
+	state1.hands[2] = [c8]
+	state1.hands[3] = [d8]
 
-	RulesEngine.apply_action(state, 0, {"type": "PLAY_CARD", "card": h7})
-	var void_play: Dictionary = RulesEngine.apply_action(state, 1, {"type": "PLAY_CARD", "card": sj})
-	RulesEngine.apply_action(state, 2, {"type": "PLAY_CARD", "card": c8})
-	var trick_res: Dictionary = RulesEngine.apply_action(state, 3, {"type": "PLAY_CARD", "card": d8})
+	RulesEngine.apply_action(state1, 0, {"type": "PLAY_CARD", "card": h7})
+	_assert_true(state1.trump_revealed and state1.trump_revealed_by_seat == 1, "T-04a: Player void with trump card has trump revealed immediately upon turn start")
 
-	_assert_true(bool(void_play.get("ok", false)) and bool(void_play.get("trump_revealed_now", false)), "T-04a: Trump reveals automatically when a player cannot follow suit")
-	_assert_true(state.trump_revealed and state.trump_revealed_by_seat == 1, "T-04b: The void player reveals trump immediately")
-	_assert_true(int(trick_res.get("winner_seat", -1)) == 1, "T-04c: The revealed trump card can win the current trick")
-	_assert_true(not bool(RulesEngine.apply_action(state, 0, {"type": "REQUEST_TRUMP_REVEAL"}).get("ok", false)), "T-04d: Manual trump reveal action is no longer accepted")
+	# Scenario 2: Void player with NO trump card in hand -> reveals trump immediately upon turn start
+	var state2 := GameState.new()
+	state2.phase = GameState.Phase.TRICK_PLAY
+	state2.high_bidder_seat = 0
+	state2.hidden_trump_suit = CardDefs.Suit.SPADES
+	state2.trump_revealed = false
+	state2.trick_leader_seat = 0
+	state2.current_turn_seat = 0
 
+	var d7: int = CardDefs.make_card(CardDefs.Suit.DIAMONDS, CardDefs.Rank.SEVEN)
+	state2.hands[0] = [h7]
+	state2.hands[1] = [d7] # Seat 1 has only Diamonds (no Hearts lead suit, NO Spades trump)
+	state2.hands[2] = [c8]
+	state2.hands[3] = [d8]
+
+	RulesEngine.apply_action(state2, 0, {"type": "PLAY_CARD", "card": h7})
+	_assert_true(state2.trump_revealed and state2.trump_revealed_by_seat == 1, "T-04b: Player void with NO trump cards still automatically reveals trump")
+
+	# Scenario 3: AI player (seat 2 or 3) void in lead suit -> reveals trump
+	var state3 := GameState.new()
+	state3.phase = GameState.Phase.TRICK_PLAY
+	state3.high_bidder_seat = 0
+	state3.hidden_trump_suit = CardDefs.Suit.DIAMONDS
+	state3.trump_revealed = false
+	state3.trick_leader_seat = 0
+	state3.current_turn_seat = 0
+
+	var h8: int = CardDefs.make_card(CardDefs.Suit.HEARTS, CardDefs.Rank.EIGHT)
+	state3.hands[0] = [h7]
+	state3.hands[1] = [h8] # Seat 1 follows Hearts
+	state3.hands[2] = [c8] # Seat 2 (AI) has no Hearts
+	state3.hands[3] = [d8]
+
+	RulesEngine.apply_action(state3, 0, {"type": "PLAY_CARD", "card": h7})
+	_assert_true(not state3.trump_revealed, "T-04c: Trump remains hidden when next player can follow lead suit")
+	RulesEngine.apply_action(state3, 1, {"type": "PLAY_CARD", "card": h8})
+	_assert_true(state3.trump_revealed and state3.trump_revealed_by_seat == 2, "T-04d: AI player void in lead suit triggers automatic trump reveal on turn transition")
+
+	# Scenario 4: Trump already revealed -> no duplicate reveal event
+	var pre_revealed_turn := state3.current_turn_seat
+	var duplicate_reveal := RulesEngine.check_and_apply_automatic_trump_reveal(state3)
+	_assert_true(not duplicate_reveal, "T-04e: Trump already revealed does not re-trigger reveal event")
+
+	# Scenario 5: Multiple players void in same trick -> first void reveals, second void does not re-trigger
+	var second_void_res := RulesEngine.apply_action(state3, 2, {"type": "PLAY_CARD", "card": c8})
+	_assert_true(bool(second_void_res.get("ok", false)), "T-04f: Void player play card accepted")
+	_assert_true(state3.current_turn_seat == 3 and state3.trump_revealed and state3.trump_revealed_by_seat == 2, "T-04g: Second void player in same trick inherits existing revealed trump without overwriting revealer")
+
+	# Scenario 6: Void player discards non-trump card -> legal play accepted
 	var discard_state := GameState.new()
 	discard_state.phase = GameState.Phase.TRICK_PLAY
 	discard_state.trump_revealed = true
@@ -223,8 +266,20 @@ func _test_t04_automatic_trump_revelation_on_void() -> void:
 	discard_state.current_trick = [{"seat": 0, "card": heart_seven, "trump_active": false}]
 	discard_state.hands[1] = [spade_nine, club_seven]
 	var off_suit_discard: Dictionary = RulesEngine.apply_action(discard_state, 1, {"type": "PLAY_CARD", "card": club_seven})
-	_assert_true(bool(off_suit_discard.get("ok", false)), "T-04e: A void player may discard any card even while holding trump")
+	_assert_true(bool(off_suit_discard.get("ok", false)), "T-04h: A void player may discard any card even while holding trump")
 
+	# Scenario 7: Void player discards trump card -> legal play accepted and trump is active
+	var trump_play_state := GameState.new()
+	trump_play_state.phase = GameState.Phase.TRICK_PLAY
+	trump_play_state.trump_revealed = true
+	trump_play_state.hidden_trump_suit = CardDefs.Suit.SPADES
+	trump_play_state.current_turn_seat = 1
+	trump_play_state.current_trick = [{"seat": 0, "card": heart_seven, "trump_active": false}]
+	trump_play_state.hands[1] = [spade_nine]
+	var trump_play: Dictionary = RulesEngine.apply_action(trump_play_state, 1, {"type": "PLAY_CARD", "card": spade_nine})
+	_assert_true(bool(trump_play.get("ok", false)) and trump_play_state.current_trick[1]["trump_active"] == true, "T-04i: Void player playing trump card has trump_active = true")
+
+	# Scenario 8: Player can follow lead suit -> must follow lead suit
 	var follow_state := GameState.new()
 	follow_state.phase = GameState.Phase.TRICK_PLAY
 	follow_state.trump_revealed = true
@@ -233,7 +288,16 @@ func _test_t04_automatic_trump_revelation_on_void() -> void:
 	follow_state.current_trick = [{"seat": 0, "card": heart_seven, "trump_active": false}]
 	follow_state.hands[1] = [heart_jack, spade_nine]
 	var follow_result: Dictionary = RulesEngine.apply_action(follow_state, 1, {"type": "PLAY_CARD", "card": spade_nine})
-	_assert_true(not bool(follow_result.get("ok", false)) and str(follow_result.get("error", "")) == "ERR_ILLEGAL_CARD_PLAY", "T-04f: A player must follow the lead suit when they have it, even after trump is revealed")
+	_assert_true(not bool(follow_result.get("ok", false)) and str(follow_result.get("error", "")) == "ERR_ILLEGAL_CARD_PLAY", "T-04j: A player must follow the lead suit when they have it, even after trump is revealed")
+
+	# Scenario 9: Request trump reveal manually is rejected
+	_assert_true(not bool(RulesEngine.apply_action(state1, 0, {"type": "REQUEST_TRUMP_REVEAL"}).get("ok", false)), "T-04k: Manual trump reveal action is rejected")
+
+	# Scenario 10: Sanitized player projection reflects authoritative trump reveal to all clients
+	var host_view: Dictionary = state2.build_player_view(0)
+	var client_view: Dictionary = state2.build_player_view(1)
+	_assert_true(host_view.get("trump_revealed") == true and client_view.get("trump_revealed") == true, "T-04l: Sanitized player view distributes revealed trump to all seats")
+	_assert_true(int(host_view.get("visible_trump_suit")) == CardDefs.Suit.SPADES and int(client_view.get("visible_trump_suit")) == CardDefs.Suit.SPADES, "T-04m: Both host and remote client see the exact same revealed trump suit")
 
 func _test_t05_royal_pair_timing_and_caps() -> void:
 	# Bidder's partnership won the previous trick; the Pair holder may announce

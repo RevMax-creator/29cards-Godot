@@ -1,7 +1,7 @@
 extends Node
 
 ## One owner for music, gameplay SFX and auction voice callouts.
-## Gameplay effects are bundled assets; auction numbers use native system TTS when available.
+## All announcements use natural, high-fidelity male announcer voice assets.
 
 const POOL_SIZE: int = 12
 const BUS_SFX: StringName = &"SFX"
@@ -36,7 +36,6 @@ const BID_VOICE_MIN: int = 15
 const BID_VOICE_MAX: int = 28
 const VOICE_PATH_FORMAT: String = "res://assets/audio/voice/bid_%d.ogg"
 const PASS_VOICE_PATH: String = "res://assets/audio/voice/pass.ogg"
-const SEAT_PITCHES: Array[float] = [1.0, 0.99, 1.01, 0.98]
 
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _pool_index: int = 0
@@ -46,10 +45,6 @@ var _sounds: Dictionary = {}
 var _voice_streams: Dictionary = {}
 var _voice_queue: Array[Dictionary] = []
 var _voice_is_playing: bool = false
-var _tts_voice_id: String = ""
-var _native_tts_available: bool = false
-var _tts_voice_is_explicitly_male: bool = false
-var _next_utterance_id: int = 1
 var _is_suspended: bool = false
 var _is_shutting_down: bool = false
 
@@ -58,7 +53,6 @@ func _ready() -> void:
 	_ensure_audio_bus(BUS_SFX)
 	_ensure_audio_bus(BUS_MUSIC)
 	_ensure_audio_bus(BUS_VOICE)
-	_resolve_native_tts_voice()
 	_load_audio_bank()
 	_create_players()
 
@@ -70,55 +64,6 @@ func _ensure_audio_bus(bus_name: StringName) -> void:
 		AudioServer.set_bus_name(bus_index, bus_name)
 	AudioServer.set_bus_send(bus_index, "Master")
 	AudioServer.set_bus_volume_db(bus_index, 0.0)
-
-func _resolve_native_tts_voice() -> void:
-	# Godot exposes voice name/id/language, but not a portable gender field.
-	# Prefer an English voice whose advertised name/id clearly identifies a male
-	# voice; otherwise respect the OS default English voice instead of guessing.
-	var voices: Array = DisplayServer.tts_get_voices()
-	var best_english_id: String = ""
-	var best_male_id: String = ""
-	var best_male_score: int = -1
-	for voice_info_variant in voices:
-		if not voice_info_variant is Dictionary:
-			continue
-		var voice_info: Dictionary = voice_info_variant
-		var language: String = str(voice_info.get("language", "")).to_lower()
-		if not language.begins_with("en"):
-			continue
-		var voice_id: String = str(voice_info.get("id", ""))
-		var voice_name: String = str(voice_info.get("name", ""))
-		if best_english_id.is_empty():
-			best_english_id = voice_id
-		var identity: String = (voice_name + " " + voice_id).to_lower()
-		var score: int = 0
-		for marker in ["#male", "_male", "-male", "male_", "male-"]:
-			if identity.contains(marker):
-				score = maxi(score, 100)
-		for marker in ["david", "daniel", "guy", "mark", "james", "matthew", "george", "oliver", "ryan", "aaron", "john", "paul", "peter", "liam", "nathan", "thomas", "alex", "fred", "albert", "tom"]:
-			if identity.contains(marker):
-				score = maxi(score, 50)
-		if score > best_male_score:
-			best_male_score = score
-			best_male_id = voice_id
-
-	if not best_male_id.is_empty() and best_male_score > 0:
-		_tts_voice_id = best_male_id
-		_tts_voice_is_explicitly_male = true
-	elif not best_english_id.is_empty():
-		_tts_voice_id = best_english_id
-		_tts_voice_is_explicitly_male = false
-	else:
-		var english_ids: PackedStringArray = DisplayServer.tts_get_voices_for_language("en")
-		if not english_ids.is_empty():
-			_tts_voice_id = str(english_ids[0])
-			_tts_voice_is_explicitly_male = false
-
-	_native_tts_available = not _tts_voice_id.is_empty()
-	if not _native_tts_available:
-		push_warning("No English system TTS voice found. Falling back to bundled bid recordings.")
-	elif not _tts_voice_is_explicitly_male:
-		push_warning("No explicitly male English TTS voice was exposed by this device. Using its first English voice; select an installed male English voice in system Text-to-Speech settings for a male announcer.")
 
 func _bid_phrase(amount: int) -> String:
 	var names: Dictionary = {
@@ -144,12 +89,14 @@ func _load_audio_bank() -> void:
 		var voice_path: String = VOICE_PATH_FORMAT % amount
 		var voice_stream := ResourceLoader.load(voice_path) as AudioStream
 		if voice_stream == null:
-			push_warning("Missing spoken bid clip: %s" % voice_path)
+			push_error("Missing spoken bid clip: %s" % voice_path)
 		else:
 			_voice_streams[amount] = voice_stream
 	var pass_stream := ResourceLoader.load(PASS_VOICE_PATH) as AudioStream
 	if pass_stream != null:
 		_voice_streams["pass"] = pass_stream
+	else:
+		push_error("Missing spoken pass clip: %s" % PASS_VOICE_PATH)
 
 func _create_players() -> void:
 	for i in range(POOL_SIZE):
@@ -214,45 +161,29 @@ func play_sfx(sound_name: String, pitch_variance: float = 0.04, volume_scale: fl
 	player.volume_db = -3.5 + linear_to_db(maxf(volume_scale, 0.001))
 	player.play()
 
-## Speaks the actual accepted bid, including bids made by AI or remote players.
-## Prefer native device TTS when an explicitly male voice is available; otherwise
-## fall back to the bundled natural male voice recordings.
+## Speaks the actual accepted bid, using the authoritative natural male announcer recordings.
 func play_bid_callout(amount: int, seat: int) -> void:
 	if _is_suspended or _is_shutting_down or amount < BID_VOICE_MIN or amount > BID_VOICE_MAX:
 		return
-	var phrase: String = _bid_phrase(amount)
-	if phrase.is_empty():
-		return
 	if OS.is_debug_build():
-		print("[Audio] accepted bid event %d from seat %d; native_tts=%s, male=%s" % [amount, seat, str(_native_tts_available), str(_tts_voice_is_explicitly_male)])
-	if _native_tts_available and _tts_voice_is_explicitly_male:
-		# Keep the same natural male timbre for all seats; avoid chipmunk-like
-		# pitch shifts. Slight rate variation is intentionally not used.
-		DisplayServer.tts_speak(phrase + ".", _tts_voice_id, 100, 0.98, 0.92, _next_utterance_id, false)
-		_next_utterance_id += 1
-		if OS.is_debug_build():
-			print("[Audio] TTS accepted bid: %s (seat %d)" % [phrase, seat])
-		return
-	_enqueue_voice(amount, seat)
+		print("[Audio] accepted bid event %d from seat %d" % [amount, seat])
+	_enqueue_voice(amount)
 
+## Speaks pass callout using the authoritative natural male announcer recording.
 func play_pass_callout(seat: int) -> void:
 	if _is_suspended or _is_shutting_down:
 		return
-	if _native_tts_available and _tts_voice_is_explicitly_male:
-		DisplayServer.tts_speak("Pass.", _tts_voice_id, 100, 0.98, 0.92, _next_utterance_id, false)
-		_next_utterance_id += 1
-		if OS.is_debug_build():
-			print("[Audio] TTS pass (seat %d)" % seat)
-		return
-	_enqueue_voice("pass", seat)
+	if OS.is_debug_build():
+		print("[Audio] pass event from seat %d" % seat)
+	_enqueue_voice("pass")
 
-func _enqueue_voice(voice_key: Variant, seat: int) -> void:
+func _enqueue_voice(voice_key: Variant) -> void:
 	if _is_suspended or _is_shutting_down or not _voice_streams.has(voice_key):
+		push_error("Cannot play voice cue: asset not found for key '%s'" % str(voice_key))
 		return
-	var seat_index: int = posmod(seat, SEAT_PITCHES.size())
 	_voice_queue.append({
 		"stream": _voice_streams[voice_key],
-		"pitch": SEAT_PITCHES[seat_index]
+		"pitch": 1.0
 	})
 	_play_next_voice()
 
@@ -278,8 +209,6 @@ func suspend() -> void:
 	_is_suspended = true
 	_voice_queue.clear()
 	_voice_is_playing = false
-	if _native_tts_available:
-		DisplayServer.tts_pause()
 	if is_instance_valid(_bgm_player):
 		_bgm_player.stream_paused = true
 	if is_instance_valid(_voice_player):
@@ -294,8 +223,6 @@ func resume() -> void:
 	_is_suspended = false
 	if is_instance_valid(_bgm_player):
 		_bgm_player.stream_paused = false
-	if _native_tts_available:
-		DisplayServer.tts_resume()
 
 ## Explicit terminal cleanup called before SceneTree.quit() and on tree exit.
 func shutdown() -> void:
@@ -303,13 +230,16 @@ func shutdown() -> void:
 	_is_suspended = true
 	_voice_queue.clear()
 	_voice_is_playing = false
-	if _native_tts_available:
-		DisplayServer.tts_stop()
 	if is_instance_valid(_bgm_player):
 		_bgm_player.stop()
 		_bgm_player.stream = null
 	if is_instance_valid(_voice_player):
 		_voice_player.stop()
+		_voice_player.stream = null
+	for player in _sfx_pool:
+		if is_instance_valid(player):
+			player.stop()
+			player.stream = null
 		_voice_player.stream = null
 	for player in _sfx_pool:
 		if is_instance_valid(player):

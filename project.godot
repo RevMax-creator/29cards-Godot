@@ -20,10 +20,6 @@ run/main_scene="res://src/ui/app_shell.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.0392157, 0.054902, 0.0901961, 1)
 
-[audio]
-
-general/text_to_speech=true
-
 [autoload]
 
 SaveManager="*res://src/persistence/save_manager.gd"

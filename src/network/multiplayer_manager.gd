@@ -144,6 +144,8 @@ func _process(delta: float) -> void:
 			# makes the Redouble decision using its private trump knowledge.
 			turn_seat = authoritative_state.high_bidder_seat
 		if authoritative_state.seat_is_ai[turn_seat] and not _disconnect_grace_timers.has(turn_seat):
+			if authoritative_state.phase == GameState.Phase.TRICK_PLAY and RulesEngine.check_and_apply_automatic_trump_reveal(authoritative_state):
+				_broadcast_state_from_host()
 			_ai_turn_cooldown += delta
 			if _ai_turn_cooldown >= AI_THINK_DELAY_SEC:
 				_ai_turn_cooldown = 0.0

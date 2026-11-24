@@ -117,6 +117,8 @@ static func apply_action(state: GameState, seat: int, action: Dictionary) -> Dic
 	if result.get("ok", false):
 		_process_safe_point_reclaims(state)
 		state.state_revision += 1
+		if check_and_apply_automatic_trump_reveal(state):
+			result["trump_revealed_now"] = true
 	return result
 
 static func _handle_bid(state: GameState, seat: int, amount: int) -> Dictionary:
@@ -441,6 +443,33 @@ static func get_legal_cards(state: GameState, seat: int) -> Array[int]:
 	# A player void in the lead suit may discard any card; trump has already been opened automatically.
 	return hand.duplicate()
 
+## Authoritative check: automatically reveals trump at the exact moment any player
+## cannot follow the lead suit in the current trick. Idempotent and committed once.
+static func check_and_apply_automatic_trump_reveal(state: GameState) -> bool:
+	if state == null:
+		return false
+	if state.phase != GameState.Phase.TRICK_PLAY:
+		return false
+	if state.current_trick.is_empty():
+		return false
+	if state.trump_revealed:
+		return false
+	var seat: int = state.current_turn_seat
+	if seat < 0 or seat >= 4:
+		return false
+	var led_suit: int = CardDefs.get_suit(int(state.current_trick[0]["card"]))
+	if not _player_has_suit(state.hands[seat], led_suit):
+		state.trump_revealed = true
+		state.trump_revealed_on_trick = state.trick_index
+		state.trump_revealed_by_seat = seat
+		state.state_revision += 1
+		for i in range(state.current_trick.size()):
+			var prior_card: int = int(state.current_trick[i]["card"])
+			if CardDefs.get_suit(prior_card) == state.hidden_trump_suit:
+				state.current_trick[i]["trump_active"] = true
+		return true
+	return false
+
 static func _handle_play_card(state: GameState, seat: int, card_id: int) -> Dictionary:
 	if state.phase != GameState.Phase.TRICK_PLAY:
 		return {"ok": false, "error": "ERR_WRONG_PHASE"}
@@ -452,17 +481,19 @@ static func _handle_play_card(state: GameState, seat: int, card_id: int) -> Dict
 	var trump_revealed_now: bool = false
 	if not state.current_trick.is_empty():
 		var led_suit: int = CardDefs.get_suit(int(state.current_trick[0]["card"]))
-		if not _player_has_suit(state.hands[seat], led_suit) and not state.trump_revealed:
-			state.trump_revealed = true
-			state.trump_revealed_on_trick = state.trick_index
-			state.trump_revealed_by_seat = seat
-			trump_revealed_now = true
-			# Re-evaluate any trump-suit cards already present in this trick now
-			# that the trump suit has been revealed.
-			for i in range(state.current_trick.size()):
-				var prior_card: int = int(state.current_trick[i]["card"])
-				if CardDefs.get_suit(prior_card) == state.hidden_trump_suit:
-					state.current_trick[i]["trump_active"] = true
+		if not _player_has_suit(state.hands[seat], led_suit):
+			if not state.trump_revealed:
+				state.trump_revealed = true
+				state.trump_revealed_on_trick = state.trick_index
+				state.trump_revealed_by_seat = seat
+				trump_revealed_now = true
+				for i in range(state.current_trick.size()):
+					var prior_card: int = int(state.current_trick[i]["card"])
+					if CardDefs.get_suit(prior_card) == state.hidden_trump_suit:
+						state.current_trick[i]["trump_active"] = true
+			elif state.trump_revealed_by_seat == seat and state.trump_revealed_on_trick == state.trick_index:
+				# This seat was the void player who triggered the revelation on this trick
+				trump_revealed_now = true
 
 	var legal_cards: Array[int] = get_legal_cards(state, seat)
 	if not legal_cards.has(card_id):
@@ -478,6 +509,8 @@ static func _handle_play_card(state: GameState, seat: int, card_id: int) -> Dict
 
 	if state.current_trick.size() < 4:
 		state.current_turn_seat = (seat + 1) % 4
+		var next_revealed: bool = check_and_apply_automatic_trump_reveal(state)
+		trump_revealed_now = trump_revealed_now or next_revealed
 		return {"ok": true, "event": "card_played", "seat": seat, "card": card_id, "trump_revealed_now": trump_revealed_now}
 
 	# Resolve completed 4-card trick

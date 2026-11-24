@@ -169,23 +169,37 @@ func _build_table_ui() -> void:
 	stat_float.anchor_right = 1.0
 	stat_float.anchor_top = 0.0
 	stat_float.anchor_bottom = 0.0
-	stat_float.offset_left = -220
+	stat_float.offset_left = -222
 	stat_float.offset_right = -16
 	stat_float.offset_top = 16
-	stat_float.offset_bottom = 128
-	stat_float.add_theme_stylebox_override("panel", _create_box_style(Color.WHITE, Color("#00e5ff"), 8, 2))
+	stat_float.offset_bottom = 132
+	var stat_panel_style := StyleBoxFlat.new()
+	stat_panel_style.bg_color = Color(0.04, 0.08, 0.14, 0.72)
+	stat_panel_style.border_color = Color("#00D9E8")
+	stat_panel_style.set_border_width_all(2)
+	stat_panel_style.set_corner_radius_all(12)
+	stat_panel_style.shadow_color = Color(0.0, 0.85, 0.95, 0.22)
+	stat_panel_style.shadow_size = 10
+	stat_panel_style.shadow_offset = Vector2.ZERO
+	stat_panel_style.content_margin_left = 4
+	stat_panel_style.content_margin_right = 4
+	stat_panel_style.content_margin_top = 4
+	stat_panel_style.content_margin_bottom = 4
+	stat_float.add_theme_stylebox_override("panel", stat_panel_style)
 	_table_overlay.add_child(stat_float)
 
 	var stat_grid := GridContainer.new()
 	stat_grid.columns = 3
-	stat_grid.add_theme_constant_override("h_separation", 0)
-	stat_grid.add_theme_constant_override("v_separation", 0)
+	stat_grid.add_theme_constant_override("h_separation", 2)
+	stat_grid.add_theme_constant_override("v_separation", 2)
 	stat_float.add_child(stat_grid)
 
-	# Row 1: Team 1 (Blue)
-	_t1_score_label = _stat_grid_cell("0", Color("#1976d2"), Color("#bbdefb"), true)
-	_t1_bid_label = _stat_grid_cell("—", Color("#1976d2"), Color("#bbdefb"), true)
-	_t1_dr_label = _stat_grid_cell("—", Color("#1976d2"), Color("#bbdefb"), true)
+	# Row 1: Team 1 (Blue / You & Partner)
+	var t1_bg := Color(0.08, 0.20, 0.36, 0.55)
+	var t1_fg := Color("#64B5F6")
+	_t1_score_label = _stat_grid_cell("0", t1_fg, t1_bg, true)
+	_t1_bid_label = _stat_grid_cell("—", t1_fg, t1_bg, true)
+	_t1_dr_label = _stat_grid_cell("—", t1_fg, t1_bg, true)
 	stat_grid.add_child(_t1_score_label.get_parent())
 	stat_grid.add_child(_t1_bid_label.get_parent())
 	stat_grid.add_child(_t1_dr_label.get_parent())
@@ -195,10 +209,12 @@ func _build_table_ui() -> void:
 	stat_grid.add_child(_stat_grid_header("BID"))
 	stat_grid.add_child(_stat_grid_header("D/R"))
 
-	# Row 3: Team 2 (Red)
-	_t2_score_label = _stat_grid_cell("0", Color("#c62828"), Color("#ffcdd2"), false)
-	_t2_bid_label = _stat_grid_cell("—", Color("#c62828"), Color("#ffcdd2"), false)
-	_t2_dr_label = _stat_grid_cell("—", Color("#c62828"), Color("#ffcdd2"), false)
+	# Row 3: Team 2 (Coral / Opponents)
+	var t2_bg := Color(0.32, 0.08, 0.12, 0.55)
+	var t2_fg := Color("#FF6E6E")
+	_t2_score_label = _stat_grid_cell("0", t2_fg, t2_bg, false)
+	_t2_bid_label = _stat_grid_cell("—", t2_fg, t2_bg, false)
+	_t2_dr_label = _stat_grid_cell("—", t2_fg, t2_bg, false)
 	stat_grid.add_child(_t2_score_label.get_parent())
 	stat_grid.add_child(_t2_bid_label.get_parent())
 	stat_grid.add_child(_t2_dr_label.get_parent())
@@ -317,7 +333,22 @@ func _build_table_ui() -> void:
 	_trick_slots[1] = _create_card_slot(_trick_arena, Vector2(-TRICK_SPREAD_X, 0)) # Left
 	_trick_slots[3] = _create_card_slot(_trick_arena, Vector2(TRICK_SPREAD_X, 0))  # Right
 
+	# --- 3G. Card Fan Arc (Bottom) ---
+	_card_fan_container = Control.new()
+	_card_fan_container.anchor_left = 0.05
+	_card_fan_container.anchor_right = 0.95
+	_card_fan_container.anchor_top = 1.0
+	_card_fan_container.anchor_bottom = 0.90
+	# Lift the hand clear of the bottom screen edge and reserve enough
+	# vertical space for full-size cards on portrait phones.
+	_card_fan_container.offset_top = -370
+	_card_fan_container.offset_bottom = -140
+	_table_overlay.add_child(_card_fan_container)
+
 	# --- 3F. Center Bid Box (Wide Horizontal Rectangular Panel) ---
+	# Authoritative layering: z_index = 100 with z_as_relative = false ensures
+	# the bidding panel always draws strictly above opponent avatars, profiles,
+	# badges, card fans, and table felt under all refresh scenarios.
 	_center_bid_box = PanelContainer.new()
 	_center_bid_box.anchor_left = 0.5
 	_center_bid_box.anchor_right = 0.5
@@ -327,6 +358,9 @@ func _build_table_ui() -> void:
 	_center_bid_box.offset_right = 310
 	_center_bid_box.offset_top = -115
 	_center_bid_box.offset_bottom = 115
+	_center_bid_box.z_index = 100
+	_center_bid_box.z_as_relative = false
+	_center_bid_box.mouse_filter = Control.MOUSE_FILTER_STOP
 	var bid_panel_style := StyleBoxFlat.new()
 	bid_panel_style.bg_color = Color(0.04, 0.08, 0.13, 0.38)
 	bid_panel_style.border_color = Color("#00D9E8")
@@ -392,25 +426,27 @@ func _build_table_ui() -> void:
 	_bid_buttons_scroll.add_child(_bid_buttons_grid)
 	
 	_action_panel = PanelContainer.new()
-	_action_panel.z_index = 15
-	_action_panel.add_theme_stylebox_override("panel", _create_box_style(Color("#101F2B"), ThemePalette.ACCENT_CYAN, 12, 1))
+	_action_panel.z_index = 100
+	_action_panel.z_as_relative = false
+	_action_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var action_panel_style := StyleBoxFlat.new()
+	action_panel_style.bg_color = Color(0.04, 0.08, 0.14, 0.72)
+	action_panel_style.border_color = Color("#00D9E8")
+	action_panel_style.set_border_width_all(2)
+	action_panel_style.set_corner_radius_all(12)
+	action_panel_style.shadow_color = Color(0.0, 0.85, 0.95, 0.28)
+	action_panel_style.shadow_size = 14
+	action_panel_style.shadow_offset = Vector2.ZERO
+	action_panel_style.content_margin_left = 16
+	action_panel_style.content_margin_right = 16
+	action_panel_style.content_margin_top = 10
+	action_panel_style.content_margin_bottom = 10
+	_action_panel.add_theme_stylebox_override("panel", action_panel_style)
 	_table_overlay.add_child(_action_panel)
 	_action_content = VBoxContainer.new()
 	_action_content.alignment = BoxContainer.ALIGNMENT_CENTER
-	_action_content.add_theme_constant_override("separation", 5)
+	_action_content.add_theme_constant_override("separation", 8)
 	_action_panel.add_child(_action_content)
-
-	# --- 3G. Card Fan Arc (Bottom) ---
-	_card_fan_container = Control.new()
-	_card_fan_container.anchor_left = 0.05
-	_card_fan_container.anchor_right = 0.95
-	_card_fan_container.anchor_top = 1.0
-	_card_fan_container.anchor_bottom = 0.90
-	# Lift the hand clear of the bottom screen edge and reserve enough
-	# vertical space for full-size cards on portrait phones.
-	_card_fan_container.offset_top = -370
-	_card_fan_container.offset_bottom = -140
-	_table_overlay.add_child(_card_fan_container)
 	
 	_hand_fan = load("res://addons/card_fan/src/card_set.tscn").instantiate()
 	_hand_fan.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1116,10 +1152,10 @@ func _refresh_seat_profiles(view: Dictionary) -> void:
 
 func _stat_grid_cell(default_val: String, text_color: Color, bg_color: Color, is_top: bool) -> Label:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(66, 42)
+	panel.custom_minimum_size = Vector2(66, 40)
 	var style := StyleBoxFlat.new()
 	style.bg_color = bg_color
-	style.border_color = Color("#00838f")
+	style.border_color = Color("#00D9E8").darkened(0.4)
 	style.set_border_width_all(1)
 	if is_top:
 		style.corner_radius_top_left = 6
@@ -1133,17 +1169,17 @@ func _stat_grid_cell(default_val: String, text_color: Color, bg_color: Color, is
 	lbl.text = default_val
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 22)
+	lbl.add_theme_font_size_override("font_size", 21)
 	lbl.add_theme_color_override("font_color", text_color)
 	panel.add_child(lbl)
 	return lbl
 
 func _stat_grid_header(title: String) -> PanelContainer:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(66, 28)
+	panel.custom_minimum_size = Vector2(66, 26)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color.WHITE
-	style.border_color = Color("#00838f")
+	style.bg_color = Color(0.06, 0.12, 0.20, 0.55)
+	style.border_color = Color("#00D9E8").darkened(0.5)
 	style.set_border_width_all(1)
 	panel.add_theme_stylebox_override("panel", style)
 	
@@ -1151,8 +1187,8 @@ func _stat_grid_header(title: String) -> PanelContainer:
 	lbl.text = title
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 14)
-	lbl.add_theme_color_override("font_color", Color("#555555"))
+	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_color_override("font_color", Color("#8EB8D0"))
 	panel.add_child(lbl)
 	return panel
 	
@@ -1734,33 +1770,35 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.visible = true
 			_action_panel.anchor_left = 0.5
 			_action_panel.anchor_right = 0.5
-			_action_panel.anchor_top = 0.6
-			_action_panel.anchor_bottom = 0.6
+			_action_panel.anchor_top = 0.58
+			_action_panel.anchor_bottom = 0.58
 			_action_panel.offset_left = -150
 			_action_panel.offset_right = 150
-			_action_panel.offset_top = -50
-			_action_panel.offset_bottom = 50
+			_action_panel.offset_top = -54
+			_action_panel.offset_bottom = 54
 			var title := Label.new()
 			title.text = "CHOOSE TRUMP"
+			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			title.add_theme_font_size_override("font_size", 16)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			
 			var row := HBoxContainer.new()
 			row.alignment = BoxContainer.ALIGNMENT_CENTER
-			row.add_theme_constant_override("separation", 8)
+			row.add_theme_constant_override("separation", 10)
 			_action_content.add_child(row)
 			for suit_id in range(4):
 				var button := Button.new()
 				var symbol: String = str(CardDefs.SUIT_SYMBOLS[suit_id])
-				var ink: Color = ThemePalette.SUIT_CRIMSON if suit_id in [CardDefs.Suit.HEARTS, CardDefs.Suit.DIAMONDS] else ThemePalette.SUIT_OBSIDIAN
+				var ink: Color = ThemePalette.SUIT_CRIMSON if suit_id in [CardDefs.Suit.HEARTS, CardDefs.Suit.DIAMONDS] else ThemePalette.ACCENT_CYAN
 				button.text = symbol
-				button.custom_minimum_size = Vector2(60, 60)
+				button.custom_minimum_size = Vector2(60, 56)
 				button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				button.add_theme_font_size_override("font_size", 38)
+				button.add_theme_font_size_override("font_size", 34)
 				button.add_theme_color_override("font_color", ink)
-				button.add_theme_stylebox_override("normal", ThemePalette.create_button_style(ThemePalette.CARD_IVORY, ThemePalette.TABLE_BORDER_EMERALD, 14))
-				button.add_theme_stylebox_override("hover", ThemePalette.create_button_style(Color.WHITE, ThemePalette.ACCENT_CYAN, 14))
+				button.add_theme_stylebox_override("normal", _create_box_style(Color("#132738"), Color("#26556C"), 10, 1))
+				button.add_theme_stylebox_override("hover", _create_box_style(Color("#1A3E52"), Color("#00D9E8"), 10, 2))
+				button.add_theme_stylebox_override("pressed", _create_box_style(Color("#0E4D5C"), Color("#00FFFF"), 10, 2))
 				button.pressed.connect(func() -> void:
 					AudioManager.play_sfx("ui_click", 0.02, 0.75)
 					MultiplayerManager.submit_local_action({"type": "SET_TRUMP", "suit": suit_id})
@@ -1771,40 +1809,56 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.visible = true
 			_action_panel.anchor_left = 0.5
 			_action_panel.anchor_right = 0.5
-			_action_panel.anchor_top = 0.6
-			_action_panel.anchor_bottom = 0.6
-			_action_panel.offset_left = -100
-			_action_panel.offset_right = 100
-			_action_panel.offset_top = -40
-			_action_panel.offset_bottom = 40
+			_action_panel.anchor_top = 0.58
+			_action_panel.anchor_bottom = 0.58
+			_action_panel.offset_left = -120
+			_action_panel.offset_right = 120
+			_action_panel.offset_top = -46
+			_action_panel.offset_bottom = 46
 			var title := Label.new()
 			title.text = "DOUBLE?"
+			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			title.add_theme_font_size_override("font_size", 16)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			var row := HBoxContainer.new()
-			row.add_child(_make_action_button("2×", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_DOUBLE", "double": true})))
-			row.add_child(_make_action_button("HOLD", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_DOUBLE", "double": false})))
+			row.add_theme_constant_override("separation", 10)
+			var btn_double := _make_action_button("2×", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_DOUBLE", "double": true}))
+			btn_double.add_theme_color_override("font_color", Color("#17222B"))
+			btn_double.add_theme_stylebox_override("normal", _create_box_style(Color("#E6B84F"), Color("#F4D178"), 8, 1))
+			btn_double.add_theme_stylebox_override("hover", _create_box_style(Color("#F2CC70"), Color("#FFF0B8"), 8, 2))
+			btn_double.add_theme_stylebox_override("pressed", _create_box_style(Color("#D5A43B"), Color("#FFF0B8"), 8, 2))
+			row.add_child(btn_double)
+			var btn_hold := _make_action_button("HOLD", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_DOUBLE", "double": false}))
+			row.add_child(btn_hold)
 			_action_content.add_child(row)
 			
 		GameState.Phase.REDOUBLE_DECISION:
 			_action_panel.visible = true
 			_action_panel.anchor_left = 0.5
 			_action_panel.anchor_right = 0.5
-			_action_panel.anchor_top = 0.6
-			_action_panel.anchor_bottom = 0.6
-			_action_panel.offset_left = -100
-			_action_panel.offset_right = 100
-			_action_panel.offset_top = -40
-			_action_panel.offset_bottom = 40
+			_action_panel.anchor_top = 0.58
+			_action_panel.anchor_bottom = 0.58
+			_action_panel.offset_left = -120
+			_action_panel.offset_right = 120
+			_action_panel.offset_top = -46
+			_action_panel.offset_bottom = 46
 			var title := Label.new()
 			title.text = "REDOUBLE?"
+			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			title.add_theme_font_size_override("font_size", 16)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			var row := HBoxContainer.new()
-			row.add_child(_make_action_button("4×", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_REDOUBLE", "redouble": true})))
-			row.add_child(_make_action_button("HOLD", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_REDOUBLE", "redouble": false})))
+			row.add_theme_constant_override("separation", 10)
+			var btn_redouble := _make_action_button("4×", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_REDOUBLE", "redouble": true}))
+			btn_redouble.add_theme_color_override("font_color", Color("#FFFFFF"))
+			btn_redouble.add_theme_stylebox_override("normal", _create_box_style(Color("#C62828"), Color("#EF5350"), 8, 1))
+			btn_redouble.add_theme_stylebox_override("hover", _create_box_style(Color("#E53935"), Color("#FF8A80"), 8, 2))
+			btn_redouble.add_theme_stylebox_override("pressed", _create_box_style(Color("#B71C1C"), Color("#FF8A80"), 8, 2))
+			row.add_child(btn_redouble)
+			var btn_hold := _make_action_button("HOLD", func() -> void: MultiplayerManager.submit_local_action({"type": "CALL_REDOUBLE", "redouble": false}))
+			row.add_child(btn_hold)
 			_action_content.add_child(row)
 			
 		GameState.Phase.TRICK_PLAY:
@@ -1838,33 +1892,43 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_content.add_child(pair_title)
 
 			var pair_row := HBoxContainer.new()
-			pair_row.add_theme_constant_override("separation", 8)
-			pair_row.add_child(_make_action_button("DECLARE +4", func() -> void:
+			pair_row.add_theme_constant_override("separation", 10)
+			var btn_declare := _make_action_button("DECLARE +4", func() -> void:
 				MultiplayerManager.submit_local_action({"type": "DECLARE_PAIR"})
-			))
-			pair_row.add_child(_make_action_button("PASS", func() -> void:
+			)
+			btn_declare.add_theme_color_override("font_color", Color("#17222B"))
+			btn_declare.add_theme_stylebox_override("normal", _create_box_style(Color("#E6B84F"), Color("#F4D178"), 8, 1))
+			btn_declare.add_theme_stylebox_override("hover", _create_box_style(Color("#F2CC70"), Color("#FFF0B8"), 8, 2))
+			btn_declare.add_theme_stylebox_override("pressed", _create_box_style(Color("#D5A43B"), Color("#FFF0B8"), 8, 2))
+			pair_row.add_child(btn_declare)
+			var btn_pass := _make_action_button("PASS", func() -> void:
 				MultiplayerManager.submit_local_action({"type": "PASS_PAIR"})
-			))
+			)
+			pair_row.add_child(btn_pass)
 			_action_content.add_child(pair_row)
 			_action_panel.visible = true
 			_action_panel.anchor_left = 0.5
 			_action_panel.anchor_right = 0.5
 			_action_panel.anchor_top = 0.73
 			_action_panel.anchor_bottom = 0.73
-			_action_panel.offset_left = -116
-			_action_panel.offset_right = 116
-			_action_panel.offset_top = -38
-			_action_panel.offset_bottom = 38
+			_action_panel.offset_left = -124
+			_action_panel.offset_right = 124
+			_action_panel.offset_top = -42
+			_action_panel.offset_bottom = 42
 
 func _make_action_button(value: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = value
-	button.custom_minimum_size = Vector2(68, 44)
+	button.custom_minimum_size = Vector2(80, 42)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.add_theme_font_size_override("font_size", 15)
-	button.add_theme_color_override("font_color", Color("#111111"))
-	button.add_theme_stylebox_override("normal", _create_box_style(Color.WHITE, Color("#bbbbbb"), 6, 1))
-	button.add_theme_stylebox_override("hover", _create_box_style(Color("#f0f0f0"), Color("#00bcd4"), 6, 2))
+	button.add_theme_color_override("font_color", Color("#EAF5F7"))
+	button.add_theme_color_override("font_hover_color", Color("#00FFFF"))
+	button.add_theme_color_override("font_pressed_color", Color("#FFFFFF"))
+	button.add_theme_stylebox_override("normal", _create_box_style(Color("#132738"), Color("#26556C"), 8, 1))
+	button.add_theme_stylebox_override("hover", _create_box_style(Color("#1A3E52"), Color("#00D9E8"), 8, 2))
+	button.add_theme_stylebox_override("pressed", _create_box_style(Color("#0E4D5C"), Color("#00FFFF"), 8, 2))
+	button.add_theme_stylebox_override("disabled", _create_box_style(Color("#141D26"), Color("#28343E"), 8, 1))
 	button.pressed.connect(func() -> void:
 		AudioManager.play_sfx("ui_click", 0.02, 0.75)
 		callback.call()
