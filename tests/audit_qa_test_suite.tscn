@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://c8vqa7audit01"]
+
+[ext_resource type="Script" path="res://tests/audit_qa_test_suite.gd" id="1_test"]
+
+[node name="AuditQATestSuite" type="Node"]
+script = ExtResource("1_test")

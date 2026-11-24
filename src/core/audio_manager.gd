@@ -9,7 +9,7 @@ const BUS_MUSIC: StringName = &"Music"
 const BUS_VOICE: StringName = &"Voice"
 const BGM_STREAM_PATH: String = "res://assets/audio/card_table_ambient.ogg"
 const BGM_VOLUME_DB: float = -17.0
-const BGM_LOOP_OFFSET_SEC: float = 1.2
+const BGM_LOOP_OFFSET_SEC: float = 0.0
 
 const SFX_PATHS: Dictionary = {
 	"deck_shuffle": "res://assets/audio/sfx/deck_shuffle.ogg",
@@ -61,7 +61,6 @@ func _ready() -> void:
 	_resolve_native_tts_voice()
 	_load_audio_bank()
 	_create_players()
-	_start_background_music()
 
 func _ensure_audio_bus(bus_name: StringName) -> void:
 	var bus_index := AudioServer.get_bus_index(bus_name)
@@ -170,22 +169,36 @@ func _create_players() -> void:
 	_voice_player.finished.connect(_on_voice_finished)
 	add_child(_voice_player)
 
-func _start_background_music() -> void:
 	var bgm_stream := ResourceLoader.load(BGM_STREAM_PATH) as AudioStreamOggVorbis
-	if bgm_stream == null:
+	if bgm_stream != null:
+		bgm_stream.loop = true
+		bgm_stream.loop_offset = BGM_LOOP_OFFSET_SEC
+		_bgm_player = AudioStreamPlayer.new()
+		_bgm_player.name = "BackgroundMusicPlayer"
+		_bgm_player.bus = BUS_MUSIC
+		_bgm_player.volume_db = BGM_VOLUME_DB
+		_bgm_player.stream = bgm_stream
+		_bgm_player.process_mode = Node.PROCESS_MODE_ALWAYS
+		add_child(_bgm_player)
+	else:
 		push_warning("Background music could not be loaded: %s" % BGM_STREAM_PATH)
-		return
 
-	bgm_stream.loop = true
-	bgm_stream.loop_offset = BGM_LOOP_OFFSET_SEC
-	_bgm_player = AudioStreamPlayer.new()
-	_bgm_player.name = "BackgroundMusicPlayer"
-	_bgm_player.bus = BUS_MUSIC
-	_bgm_player.volume_db = BGM_VOLUME_DB
-	_bgm_player.stream = bgm_stream
-	_bgm_player.process_mode = Node.PROCESS_MODE_ALWAYS
-	add_child(_bgm_player)
-	_bgm_player.play()
+## Starts background music once when entering gameplay. Idempotent: never restarts if already playing.
+func start_gameplay_music() -> void:
+	if _is_suspended or _is_shutting_down:
+		return
+	if is_instance_valid(_bgm_player):
+		if not _bgm_player.playing:
+			_bgm_player.play()
+
+## Stops background music cleanly when leaving gameplay.
+func stop_gameplay_music() -> void:
+	if is_instance_valid(_bgm_player) and _bgm_player.playing:
+		_bgm_player.stop()
+
+## Legacy compatibility alias.
+func _start_background_music() -> void:
+	start_gameplay_music()
 
 ## volume_scale is linear and intended for per-event mix balance.
 func play_sfx(sound_name: String, pitch_variance: float = 0.04, volume_scale: float = 1.0) -> void:
@@ -202,7 +215,8 @@ func play_sfx(sound_name: String, pitch_variance: float = 0.04, volume_scale: fl
 	player.play()
 
 ## Speaks the actual accepted bid, including bids made by AI or remote players.
-## Prefer native device TTS for a natural voice and keep bundled clips as fallback.
+## Prefer native device TTS when an explicitly male voice is available; otherwise
+## fall back to the bundled natural male voice recordings.
 func play_bid_callout(amount: int, seat: int) -> void:
 	if _is_suspended or _is_shutting_down or amount < BID_VOICE_MIN or amount > BID_VOICE_MAX:
 		return
@@ -210,8 +224,8 @@ func play_bid_callout(amount: int, seat: int) -> void:
 	if phrase.is_empty():
 		return
 	if OS.is_debug_build():
-		print("[Audio] accepted bid event %d from seat %d; native_tts=%s" % [amount, seat, str(_native_tts_available)])
-	if _native_tts_available:
+		print("[Audio] accepted bid event %d from seat %d; native_tts=%s, male=%s" % [amount, seat, str(_native_tts_available), str(_tts_voice_is_explicitly_male)])
+	if _native_tts_available and _tts_voice_is_explicitly_male:
 		# Keep the same natural male timbre for all seats; avoid chipmunk-like
 		# pitch shifts. Slight rate variation is intentionally not used.
 		DisplayServer.tts_speak(phrase + ".", _tts_voice_id, 100, 0.98, 0.92, _next_utterance_id, false)
@@ -224,7 +238,7 @@ func play_bid_callout(amount: int, seat: int) -> void:
 func play_pass_callout(seat: int) -> void:
 	if _is_suspended or _is_shutting_down:
 		return
-	if _native_tts_available:
+	if _native_tts_available and _tts_voice_is_explicitly_male:
 		DisplayServer.tts_speak("Pass.", _tts_voice_id, 100, 0.98, 0.92, _next_utterance_id, false)
 		_next_utterance_id += 1
 		if OS.is_debug_build():
@@ -293,11 +307,14 @@ func shutdown() -> void:
 		DisplayServer.tts_stop()
 	if is_instance_valid(_bgm_player):
 		_bgm_player.stop()
+		_bgm_player.stream = null
 	if is_instance_valid(_voice_player):
 		_voice_player.stop()
+		_voice_player.stream = null
 	for player in _sfx_pool:
 		if is_instance_valid(player):
 			player.stop()
+			player.stream = null
 
 func _exit_tree() -> void:
 	shutdown()

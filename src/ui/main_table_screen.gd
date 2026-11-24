@@ -28,6 +28,7 @@ var _trick_slots: Dictionary = {}
 
 var _center_bid_box: PanelContainer
 var _bid_vbox: VBoxContainer
+var _bid_header_hbox: HBoxContainer
 var _bid_buttons_grid: GridContainer
 var _bid_buttons_scroll: ScrollContainer
 var _bid_title_label: Label
@@ -76,7 +77,11 @@ func _ready() -> void:
 	MultiplayerManager.player_view_updated.connect(_on_player_view_updated)
 	MultiplayerManager.action_rejected.connect(_on_action_rejected)
 	MultiplayerManager.host_migration_completed.connect(_on_host_migration_completed)
+	AudioManager.start_gameplay_music()
 	call_deferred("_refresh_existing_match")
+
+func _exit_tree() -> void:
+	AudioManager.stop_gameplay_music()
 
 func _build_table_ui() -> void:
 	const TRICK_SPREAD_X := 70.0
@@ -312,68 +317,78 @@ func _build_table_ui() -> void:
 	_trick_slots[1] = _create_card_slot(_trick_arena, Vector2(-TRICK_SPREAD_X, 0)) # Left
 	_trick_slots[3] = _create_card_slot(_trick_arena, Vector2(TRICK_SPREAD_X, 0))  # Right
 
-	# --- 3F. Center Bid Box ---
+	# --- 3F. Center Bid Box (Wide Horizontal Rectangular Panel) ---
 	_center_bid_box = PanelContainer.new()
 	_center_bid_box.anchor_left = 0.5
 	_center_bid_box.anchor_right = 0.5
 	_center_bid_box.anchor_top = 0.42
 	_center_bid_box.anchor_bottom = 0.42
-	_center_bid_box.offset_left = -170
-	_center_bid_box.offset_right = 170
-	_center_bid_box.offset_top = -165
-	_center_bid_box.offset_bottom = 165
+	_center_bid_box.offset_left = -310
+	_center_bid_box.offset_right = 310
+	_center_bid_box.offset_top = -115
+	_center_bid_box.offset_bottom = 115
 	var bid_panel_style := StyleBoxFlat.new()
-	bid_panel_style.bg_color = Color("#101C28")
+	bid_panel_style.bg_color = Color(0.04, 0.08, 0.13, 0.38)
 	bid_panel_style.border_color = Color("#00D9E8")
 	bid_panel_style.set_border_width_all(2)
 	bid_panel_style.set_corner_radius_all(12)
-	bid_panel_style.shadow_color = Color(0.0, 0.82, 0.92, 0.24)
-	bid_panel_style.shadow_size = 12
+	bid_panel_style.shadow_color = Color(0.0, 0.85, 0.95, 0.28)
+	bid_panel_style.shadow_size = 14
 	bid_panel_style.shadow_offset = Vector2.ZERO
-	bid_panel_style.content_margin_left = 2
-	bid_panel_style.content_margin_right = 2
-	bid_panel_style.content_margin_top = 2
-	bid_panel_style.content_margin_bottom = 2
+	bid_panel_style.content_margin_left = 14
+	bid_panel_style.content_margin_right = 14
+	bid_panel_style.content_margin_top = 10
+	bid_panel_style.content_margin_bottom = 10
 	_center_bid_box.add_theme_stylebox_override("panel", bid_panel_style)
 	_table_overlay.add_child(_center_bid_box)
 
 	var bid_margin := MarginContainer.new()
 	bid_margin.add_theme_constant_override("margin_left", 12)
 	bid_margin.add_theme_constant_override("margin_right", 12)
-	bid_margin.add_theme_constant_override("margin_top", 12)
-	bid_margin.add_theme_constant_override("margin_bottom", 12)
+	bid_margin.add_theme_constant_override("margin_top", 8)
+	bid_margin.add_theme_constant_override("margin_bottom", 8)
 	_center_bid_box.add_child(bid_margin)
 
 	_bid_vbox = VBoxContainer.new()
-	_bid_vbox.add_theme_constant_override("separation", 8)
+	_bid_vbox.add_theme_constant_override("separation", 6)
 	bid_margin.add_child(_bid_vbox)
+
+	_bid_header_hbox = HBoxContainer.new()
+	_bid_header_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bid_vbox.add_child(_bid_header_hbox)
 
 	_bid_title_label = Label.new()
 	_bid_title_label.text = "PLACE YOUR BID"
-	_bid_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_bid_title_label.add_theme_font_size_override("font_size", 18)
+	_bid_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_bid_title_label.add_theme_font_size_override("font_size", 16)
 	_bid_title_label.add_theme_color_override("font_color", Color("#00D9E8"))
-	_bid_vbox.add_child(_bid_title_label)
+	_bid_header_hbox.add_child(_bid_title_label)
+
+	var bid_header_spacer := Control.new()
+	bid_header_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bid_header_hbox.add_child(bid_header_spacer)
 
 	_bid_current_label = Label.new()
 	_bid_current_label.text = "Current bid —"
-	_bid_current_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bid_current_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_bid_current_label.add_theme_font_size_override("font_size", 13)
 	_bid_current_label.add_theme_color_override("font_color", Color("#93A8B8"))
-	_bid_vbox.add_child(_bid_current_label)
+	_bid_header_hbox.add_child(_bid_current_label)
 
 	_bid_buttons_scroll = ScrollContainer.new()
 	_bid_buttons_scroll.name = "BidButtonsScroll"
-	_bid_buttons_scroll.custom_minimum_size = Vector2(0, 154)
+	_bid_buttons_scroll.custom_minimum_size = Vector2(0, 84)
+	_bid_buttons_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bid_buttons_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_bid_buttons_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_bid_buttons_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	_bid_vbox.add_child(_bid_buttons_scroll)
 
 	_bid_buttons_grid = GridContainer.new()
-	_bid_buttons_grid.columns = 4
+	_bid_buttons_grid.columns = 7
+	_bid_buttons_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_bid_buttons_grid.add_theme_constant_override("h_separation", 6)
 	_bid_buttons_grid.add_theme_constant_override("v_separation", 6)
-	_bid_buttons_grid.custom_minimum_size = Vector2(0, 154)
 	_bid_buttons_scroll.add_child(_bid_buttons_grid)
 	
 	_action_panel = PanelContainer.new()
@@ -869,6 +884,10 @@ func _sync_deal_from_player_view(view: Dictionary, viewer_seat: int) -> void:
 		_hand_render_generation += 1
 		_hand_deal_in_progress_ids.clear()
 		_hand_fan.clear_all_cards()
+		_trick_collection_queue.clear()
+		_trick_collection_in_progress = false
+		_last_completed_trick_count = 0
+		_clear_trick_slots()
 		for relative_seat in [1, 2, 3]:
 			if _opponent_card_fans.has(relative_seat):
 				var remote_fan: Control = _opponent_card_fans[relative_seat] as Control
@@ -975,7 +994,8 @@ func _run_clockwise_deal_queue() -> void:
 			_add_local_card_from_deck(int(local_card_ids[local_card_cursor]))
 			local_card_cursor += 1
 			AudioManager.play_sfx("card_deal", 0.025, 0.44)
-		_apply_local_hand_order()
+		await get_tree().create_timer(0.12).timeout
+		_apply_local_hand_order(true)
 	_deal_animation_running = false
 	_reconcile_remote_fans_to_latest_view()
 
@@ -1046,11 +1066,12 @@ func _add_local_card_from_deck(card_id: int) -> void:
 		_hand_deal_in_progress_ids.erase(card_id)
 
 
-func _apply_local_hand_order() -> void:
+func _apply_local_hand_order(play_sound: bool = false) -> void:
 	if not is_instance_valid(_hand_fan):
 		return
 	var nodes_by_id: Dictionary = {}
-	for card_node in _hand_fan.get_cards():
+	var current_cards: Array = _hand_fan.get_cards()
+	for card_node in current_cards:
 		if is_instance_valid(card_node) and card_node.has_meta("domain_card_id"):
 			nodes_by_id[int(card_node.get_meta("domain_card_id"))] = card_node
 	var ordered_ids: Array[int] = _sort_card_ids_by_suit(_last_dealt_local_card_ids)
@@ -1058,9 +1079,18 @@ func _apply_local_hand_order() -> void:
 	for card_id in ordered_ids:
 		if nodes_by_id.has(card_id):
 			ordered_nodes.append(nodes_by_id[card_id])
-	_hand_fan.set_card_order(ordered_nodes)
-	if ordered_nodes.size() >= 2:
-		AudioManager.play_sfx("card_sort", 0.03, 0.62)
+	var order_changed: bool = false
+	if current_cards.size() != ordered_nodes.size():
+		order_changed = true
+	else:
+		for i in range(ordered_nodes.size()):
+			if current_cards[i] != ordered_nodes[i]:
+				order_changed = true
+				break
+	if order_changed:
+		_hand_fan.set_card_order(ordered_nodes)
+		if play_sound and ordered_nodes.size() >= 2:
+			AudioManager.play_sfx("card_sort", 0.03, 0.62)
 
 
 
@@ -1329,15 +1359,16 @@ func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> vo
 	if previous_pair_team == -1 and current_pair_team >= 0:
 		AudioManager.play_sfx("pair_declared", 0.02, 0.9)
 
-	# One crisp card sound per accepted play. The fourth card completes the
-	# trick and clears current_trick immediately, so count it from completed_tricks.
+	# One crisp card sound per accepted play. Count the exact difference in total trick cards.
 	var old_trick: Array = previous.get("current_trick", [])
 	var new_trick: Array = current.get("current_trick", [])
 	var old_completed: int = int(previous.get("completed_tricks_count", previous.get("completed_tricks", []).size()))
 	var new_completed: int = int(current.get("completed_tricks_count", current.get("completed_tricks", []).size()))
-	var card_plays: int = maxi(0, new_trick.size() - old_trick.size())
-	if new_completed > old_completed and new_trick.is_empty() and old_trick.size() == 3:
-		card_plays += 1
+	var old_total_cards: int = old_completed * 4 + old_trick.size()
+	var new_total_cards: int = new_completed * 4 + new_trick.size()
+	var card_plays: int = 0
+	if new_completed <= old_completed + 1:
+		card_plays = clampi(new_total_cards - old_total_cards, 0, 4)
 	for i in range(card_plays):
 		AudioManager.play_sfx("card_play", 0.035, 0.9)
 
@@ -1491,7 +1522,7 @@ func _rebuild_hand(view: Dictionary, phase: int, my_seat: int, turn_seat: int) -
 
 	# Card creation is centralized in the clockwise deal queue so the local
 	# face-up cards arrive in the same sequence as the three remote card backs.
-	_apply_local_hand_order()
+	_apply_local_hand_order(false)
 	_refresh_hint_card_glow()
 
 
@@ -1555,7 +1586,7 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 
 	if is_instance_valid(_bid_vbox):
 		for child in _bid_vbox.get_children():
-			if child != _bid_title_label and child != _bid_current_label and child != _bid_buttons_scroll:
+			if child != _bid_header_hbox and child != _bid_buttons_scroll:
 				_bid_vbox.remove_child(child)
 				child.queue_free()
 
@@ -1563,8 +1594,8 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 
 	var deal_locked: bool = bool(view.get("deal_animation_pending", false)) or _deal_animation_running
 	_center_bid_box.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
-	_bid_title_label.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
-	_bid_current_label.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
+	if is_instance_valid(_bid_header_hbox):
+		_bid_header_hbox.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
 
 	if deal_locked:
 		_action_panel.visible = false
@@ -1671,7 +1702,8 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 					_center_bid_box.visible = false
 					MultiplayerManager.submit_local_action({"type": "BID", "amount": chosen})
 				)
-				bid_button.custom_minimum_size = Vector2(0, 34)
+				bid_button.custom_minimum_size = Vector2(0, 36)
+				bid_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				bid_button.disabled = chosen < minimum
 				bid_button.add_theme_color_override("font_color", Color("#EAF5F7"))
 				bid_button.add_theme_color_override("font_disabled_color", Color("#60717D"))
@@ -1684,11 +1716,12 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			# Exactly one Pass button is created for the local bidding turn.
 			var pass_row := CenterContainer.new()
 			pass_row.name = "SinglePassRow"
+			pass_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var pass_button := _make_action_button("PASS", func() -> void:
 				_center_bid_box.visible = false
 				MultiplayerManager.submit_local_action({"type": "PASS_BID"})
 			)
-			pass_button.custom_minimum_size = Vector2(116, 42)
+			pass_button.custom_minimum_size = Vector2(160, 38)
 			pass_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 			pass_button.add_theme_color_override("font_color", Color("#19222B"))
 			pass_button.add_theme_stylebox_override("normal", _create_box_style(Color("#E6B84F"), Color("#F4D178"), 8, 1))
