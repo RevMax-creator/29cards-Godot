@@ -20,6 +20,8 @@ const DEFAULT_AI_BY_RELATIVE_SEAT: Dictionary = {
 	3: {"display_name": "Moss", "avatar_id": "moss"}
 }
 
+var _match_ai_profiles: Dictionary = {}
+
 var display_name: String = "Byte"
 var avatar_id: String = "byte"
 
@@ -61,8 +63,41 @@ func get_profile() -> Dictionary:
 	return {"display_name": display_name, "avatar_id": avatar_id, "avatar_name": get_avatar_name(avatar_id)}
 
 func get_ai_profile(relative_seat: int) -> Dictionary:
+	if _match_ai_profiles.has(relative_seat):
+		return (_match_ai_profiles[relative_seat] as Dictionary).duplicate(true)
 	var profile: Dictionary = DEFAULT_AI_BY_RELATIVE_SEAT.get(relative_seat, {"display_name": "Player", "avatar_id": "byte"})
 	return profile.duplicate(true)
+
+func initialize_match_ai_profiles(seed_val: int = 0) -> void:
+	_match_ai_profiles.clear()
+	var available_avatars: Array[Dictionary] = []
+	for entry in AVATAR_CATALOG:
+		if str(entry["id"]) != avatar_id:
+			available_avatars.append(entry.duplicate(true))
+	
+	var rng := RandomNumberGenerator.new()
+	if seed_val != 0:
+		rng.seed = seed_val
+	else:
+		rng.randomize()
+	
+	# Fisher-Yates shuffle
+	for i in range(available_avatars.size() - 1, 0, -1):
+		var j: int = rng.randi_range(0, i)
+		var tmp = available_avatars[i]
+		available_avatars[i] = available_avatars[j]
+		available_avatars[j] = tmp
+	
+	# Assign distinct avatars to relative seats 1, 2, 3
+	for rel_seat in [1, 2, 3]:
+		if available_avatars.size() >= rel_seat:
+			var av: Dictionary = available_avatars[rel_seat - 1]
+			_match_ai_profiles[rel_seat] = {
+				"display_name": str(av["name"]),
+				"avatar_id": str(av["id"])
+			}
+		else:
+			_match_ai_profiles[rel_seat] = DEFAULT_AI_BY_RELATIVE_SEAT.get(rel_seat, {"display_name": "Player", "avatar_id": "byte"}).duplicate(true)
 
 func get_remote_placeholder(relative_seat: int) -> Dictionary:
 	return {"display_name": "PLAYER %d" % (relative_seat + 1), "avatar_id": "byte"}

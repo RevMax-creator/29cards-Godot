@@ -217,6 +217,26 @@ func _reset_interaction_state():
 	click_pending_emit = false
 	last_click_card = null
 
+## Clears active hover, press and drag state (e.g. before dealing or full fan sync).
+func clear_interaction_state() -> void:
+	if is_dragging:
+		is_dragging = false
+		dragging_card = null
+		drag_original_index = -1
+		drag_insert_index = -1
+		drag_offset = Vector2.ZERO
+	if hovered_card:
+		if is_instance_valid(hovered_card):
+			hovered_card.set_hovered(false)
+		hovered_card = null
+	touch_active = false
+	touch_finger_index = -1
+	joystick_play_candidate = null
+	joystick_prev_had_card = false
+	_reset_interaction_state()
+	if not cards.is_empty():
+		_arrange_cards()
+
 ## 调试日志 / Debug log
 func _log(msg: String):
 	if debug_logging:
@@ -1002,6 +1022,11 @@ func add_card_with_texture(texture: Texture2D, suit: String = "spade", rank: int
 ## Add a textured card that travels from a caller-supplied local position into
 ## its final fan slot. start_position is in CardsContainer-local coordinates.
 func add_card_with_texture_from(texture: Texture2D, suit: String, rank: int, start_position: Vector2) -> Control:
+	return insert_card_with_texture_from(texture, suit, rank, start_position, -1)
+
+## Inserts a textured card at `insert_index` (or appends when `-1`) while flying
+## from `start_position`, preserving sorted overlap and scene-tree z-order.
+func insert_card_with_texture_from(texture: Texture2D, suit: String, rank: int, start_position: Vector2, insert_index: int = -1) -> Control:
 	var card_scene_resource: PackedScene = load(card_scene_path) as PackedScene
 	if card_scene_resource == null:
 		push_error("CardFan: Cannot load card scene at: " + card_scene_path)
@@ -1016,6 +1041,7 @@ func add_card_with_texture_from(texture: Texture2D, suit: String, rank: int, sta
 	_update_fan_center()
 	card.position = start_position
 	card.rotation = 0.0
+	card.scale = Vector2.ONE
 	card.modulate.a = 0.0
 
 	# CardSprite is an @onready reference. It does not exist until this card
@@ -1025,7 +1051,10 @@ func add_card_with_texture_from(texture: Texture2D, suit: String, rank: int, sta
 	if texture != null and card.has_method("set_card_texture"):
 		card.set_card_texture(texture)
 
-	cards.append(card)
+	if insert_index >= 0 and insert_index <= cards.size():
+		cards.insert(insert_index, card)
+	else:
+		cards.append(card)
 	_arrange_cards_with_enter(card)
 	_update_card_count()
 	return card
@@ -1129,6 +1158,18 @@ func _arrange_cards_with_enter(entering_card: Control):
 	_update_fan_center()
 	_do_arrange(entering_card)
 
+## Synchronize both CanvasItem.z_index and CardsContainer child order so cards
+## always overlap strictly left-to-right unless actively hovered.
+func _sync_card_z_and_tree_order(card: Control, z_layer: int, child_index: int) -> void:
+	card.z_index = z_layer
+	if is_instance_valid(cards_container) and card.get_parent() == cards_container:
+		var max_idx: int = maxi(0, cards_container.get_child_count() - 1)
+		cards_container.move_child(card, clampi(child_index, 0, max_idx))
+
+func _keep_cursor_dot_on_top() -> void:
+	if is_instance_valid(cursor_dot) and is_instance_valid(cards_container) and cursor_dot.get_parent() == cards_container:
+		cards_container.move_child(cursor_dot, cards_container.get_child_count() - 1)
+
 ## 核心排列逻辑 / Core arrange logic
 func _do_arrange(entering_card: Control):
 	var count = cards.size()
@@ -1136,9 +1177,10 @@ func _do_arrange(entering_card: Control):
 	var total_fan = angle_step * max(0, count - 1)
 	var start_angle = -total_fan / 2.0
 
+	var active_hover: Control = hovered_card if interaction_enabled else null
 	var hovered_index = -1
-	if hovered_card:
-		hovered_index = cards.find(hovered_card)
+	if active_hover:
+		hovered_index = cards.find(active_hover)
 
 	for i in range(count):
 		var card = cards[i]
@@ -1150,11 +1192,11 @@ func _do_arrange(entering_card: Control):
 		var base_angle = start_angle + i * angle_step
 		card_base_angles[card] = base_angle
 
-		card.z_index = count if card == hovered_card else i
+		_sync_card_z_and_tree_order(card, count if card == active_hover else i, i)
 
 		var target_angle = base_angle
 		# 邻牌避让 / Neighbor avoidance
-		if hovered_index >= 0 and card != hovered_card:
+		if hovered_index >= 0 and card != active_hover:
 			if i < hovered_index:
 				target_angle -= hover_avoid_angle
 			else:
@@ -1168,7 +1210,7 @@ func _do_arrange(entering_card: Control):
 		var target_pos = arc_point - Vector2(fan_card_width / 2.0, 0).rotated(target_rad)
 
 		# 悬停上浮 / Hover float
-		if card == hovered_card:
+		if card == active_hover:
 			target_pos += Vector2(0, -hover_offset).rotated(target_rad)
 
 		var base_rad = deg_to_rad(base_angle)
@@ -1182,15 +1224,17 @@ func _do_arrange(entering_card: Control):
 			_tween_card_enter(card, target_pos, target_rad)
 		else:
 			_tween_card(card, target_pos, target_rad, fan_arrange_duration)
+	_keep_cursor_dot_on_top()
 
 ## 更新悬停/避让位置（不改变基础角度）/ Update hover/avoidance positions
 func _update_hover_positions():
 	if cards.is_empty():
 		return
 	var count = cards.size()
+	var active_hover: Control = hovered_card if interaction_enabled else null
 	var hovered_index = -1
-	if hovered_card:
-		hovered_index = cards.find(hovered_card)
+	if active_hover:
+		hovered_index = cards.find(active_hover)
 
 	for i in range(count):
 		var card = cards[i]
@@ -1199,10 +1243,10 @@ func _update_hover_positions():
 			continue
 
 		var base_angle = card_base_angles.get(card, 0.0)
-		card.z_index = count if card == hovered_card else i
+		_sync_card_z_and_tree_order(card, count if card == active_hover else i, i)
 
 		var target_angle = base_angle
-		if hovered_index >= 0 and card != hovered_card:
+		if hovered_index >= 0 and card != active_hover:
 			if i < hovered_index:
 				target_angle -= hover_avoid_angle
 			else:
@@ -1215,10 +1259,11 @@ func _update_hover_positions():
 		)
 		var target_pos = arc_point - Vector2(fan_card_width / 2.0, 0).rotated(target_rad)
 
-		if card == hovered_card:
+		if card == active_hover:
 			target_pos += Vector2(0, -hover_offset).rotated(target_rad)
 
 		_tween_card(card, target_pos, target_rad, hover_duration)
+	_keep_cursor_dot_on_top()
 
 ## 更新扇形中心点（水平居中于屏幕，牌扇弧顶在屏幕中心偏下）
 ## Update fan center (horizontally centered, arc top at screen center + offset)

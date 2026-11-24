@@ -787,11 +787,12 @@ static func _score_completed_hand(state: GameState) -> void:
 		"match_game_points": state.match_game_points.duplicate()
 	}
 
-	if state.match_game_points[bidding_team] >= MATCH_WIN_TARGET:
+	var defender_team: int = 1 - bidding_team
+	if state.match_game_points[bidding_team] >= MATCH_WIN_TARGET or state.match_game_points[defender_team] <= MATCH_LOSS_THRESHOLD:
 		state.winning_team = bidding_team
 		state.phase = GameState.Phase.MATCH_OVER
-	elif state.match_game_points[bidding_team] <= MATCH_LOSS_THRESHOLD:
-		state.winning_team = 1 - bidding_team
+	elif state.match_game_points[bidding_team] <= MATCH_LOSS_THRESHOLD or state.match_game_points[defender_team] >= MATCH_WIN_TARGET:
+		state.winning_team = defender_team
 		state.phase = GameState.Phase.MATCH_OVER
 	else:
 		state.phase = GameState.Phase.HAND_SCORING

@@ -49,6 +49,8 @@ var _hint_recommended_card_id: int = -1
 var _hint_phase: int = -1
 
 var _was_my_turn: bool = false
+var _last_audio_session_id: String = ""
+var _last_audio_revision: int = -1
 var _last_trick_count: int = 0
 var _last_completed_trick_count: int = 0
 var _trick_history_initialized: bool = false
@@ -70,7 +72,7 @@ var _deal_overlay: Control
 var _deal_back_texture: Texture2D
 var _table_overlay: Control
 
-var _trick_card_size: Vector2 = Vector2(108, 152)
+var _trick_card_size: Vector2 = Vector2(130, 182)
 
 func _ready() -> void:
 	_build_table_ui()
@@ -81,11 +83,17 @@ func _ready() -> void:
 	call_deferred("_refresh_existing_match")
 
 func _exit_tree() -> void:
+	MultiplayerManager.set_trick_collection_busy(false)
 	AudioManager.stop_gameplay_music()
 
 func _build_table_ui() -> void:
-	const TRICK_SPREAD_X := 70.0
-	const TRICK_SPREAD_Y := 76.0
+	# Corner-overlapping diamond trick layout for 20% larger played cards:
+	# Card dimensions: W = 130, H = 182 (scaled +20% from 108x152).
+	# Exact edge-to-edge corner contact occurs at X = 130, Y = 182.
+	# Using X = 114, Y = 160 gives a clean 16x22 px corner overlap while keeping
+	# the central 98x138 px table window open and all card ranks/suits uncovered.
+	const TRICK_SPREAD_X := 114.0
+	const TRICK_SPREAD_Y := 160.0
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = ThemePalette.BG_MIDNIGHT_NAVY
@@ -135,7 +143,7 @@ func _build_table_ui() -> void:
 	_header_label = Label.new()
 	_header_label.text = "ROUND 1"
 	_header_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_header_label.add_theme_font_size_override("font_size", 16)
+	_header_label.add_theme_font_size_override("font_size", 18)
 	_header_label.add_theme_color_override("font_color", Color("#cfdce8"))
 	header_hbox.add_child(_header_label)
 
@@ -146,7 +154,7 @@ func _build_table_ui() -> void:
 	_status_banner = Label.new()
 	_status_banner.text = "YOUR TURN"
 	_status_banner.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_status_banner.add_theme_font_size_override("font_size", 13)
+	_status_banner.add_theme_font_size_override("font_size", 18)
 	_status_banner.add_theme_color_override("font_color", Color("#00e5ff"))
 	header_hbox.add_child(_status_banner)
 	
@@ -169,10 +177,10 @@ func _build_table_ui() -> void:
 	stat_float.anchor_right = 1.0
 	stat_float.anchor_top = 0.0
 	stat_float.anchor_bottom = 0.0
-	stat_float.offset_left = -222
-	stat_float.offset_right = -16
-	stat_float.offset_top = 16
-	stat_float.offset_bottom = 132
+	stat_float.offset_left = -246
+	stat_float.offset_right = -14
+	stat_float.offset_top = 14
+	stat_float.offset_bottom = 138
 	var stat_panel_style := StyleBoxFlat.new()
 	stat_panel_style.bg_color = Color(0.04, 0.08, 0.14, 0.72)
 	stat_panel_style.border_color = Color("#00D9E8")
@@ -221,8 +229,8 @@ func _build_table_ui() -> void:
 
 	# --- 3B. 4 Player Avatars & Stacked Secondary Status Boxes ---
 	_create_seat_Cluster(_table_overlay, 2, "Sage", Color("#64b5f6"), Vector2(0.5, 0.15), Vector2(0,0))
-	_create_seat_Cluster(_table_overlay, 1, "Flick", Color("#e57373"), Vector2(0.12, 0.45), Vector2(1,0))
-	_create_seat_Cluster(_table_overlay, 3, "Moss", Color("#81c784"), Vector2(0.88, 0.45), Vector2(-1,0))
+	_create_seat_Cluster(_table_overlay, 1, "Flick", Color("#FF6E6E"), Vector2(0.12, 0.45), Vector2(1,0))
+	_create_seat_Cluster(_table_overlay, 3, "Moss", Color("#FF6E6E"), Vector2(0.88, 0.45), Vector2(-1,0))
 	_create_seat_Cluster(_table_overlay, 0, "Guest45", Color("#4dd0e1"), Vector2(0.5, 0.77), Vector2(0,0))
 
 	# Trump selection/reveal badge is attached to the actual chooser profile.
@@ -283,19 +291,19 @@ func _build_table_ui() -> void:
 
 	var hint_heading := Label.new()
 	hint_heading.text = "💭  TABLE COACH"
-	hint_heading.add_theme_font_size_override("font_size", 10)
+	hint_heading.add_theme_font_size_override("font_size", 14)
 	hint_heading.add_theme_color_override("font_color", Color("#39E8F5"))
 	hint_heading.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint_content.add_child(hint_heading)
 
 	_hint_label = Label.new()
 	_hint_label.name = "HintMessage"
-	_hint_label.add_theme_font_size_override("font_size", 13)
+	_hint_label.add_theme_font_size_override("font_size", 16)
 	_hint_label.add_theme_color_override("font_color", Color("#F3FBFF"))
 	_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint_label.custom_minimum_size = Vector2(244, 42)
+	_hint_label.custom_minimum_size = Vector2(260, 48)
 	_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint_content.add_child(_hint_label)
 
@@ -340,9 +348,9 @@ func _build_table_ui() -> void:
 	_card_fan_container.anchor_top = 1.0
 	_card_fan_container.anchor_bottom = 0.90
 	# Lift the hand clear of the bottom screen edge and reserve enough
-	# vertical space for full-size cards on portrait phones.
-	_card_fan_container.offset_top = -370
-	_card_fan_container.offset_bottom = -140
+	# vertical space for 20% enlarged cards on portrait phones.
+	_card_fan_container.offset_top = -372
+	_card_fan_container.offset_bottom = -142
 	_table_overlay.add_child(_card_fan_container)
 
 	# --- 3F. Center Bid Box (Wide Horizontal Rectangular Panel) ---
@@ -354,10 +362,10 @@ func _build_table_ui() -> void:
 	_center_bid_box.anchor_right = 0.5
 	_center_bid_box.anchor_top = 0.42
 	_center_bid_box.anchor_bottom = 0.42
-	_center_bid_box.offset_left = -310
-	_center_bid_box.offset_right = 310
-	_center_bid_box.offset_top = -115
-	_center_bid_box.offset_bottom = 115
+	_center_bid_box.offset_left = -320
+	_center_bid_box.offset_right = 320
+	_center_bid_box.offset_top = -120
+	_center_bid_box.offset_bottom = 120
 	_center_bid_box.z_index = 100
 	_center_bid_box.z_as_relative = false
 	_center_bid_box.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -394,7 +402,7 @@ func _build_table_ui() -> void:
 	_bid_title_label = Label.new()
 	_bid_title_label.text = "PLACE YOUR BID"
 	_bid_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_bid_title_label.add_theme_font_size_override("font_size", 16)
+	_bid_title_label.add_theme_font_size_override("font_size", 18)
 	_bid_title_label.add_theme_color_override("font_color", Color("#00D9E8"))
 	_bid_header_hbox.add_child(_bid_title_label)
 
@@ -405,13 +413,13 @@ func _build_table_ui() -> void:
 	_bid_current_label = Label.new()
 	_bid_current_label.text = "Current bid —"
 	_bid_current_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_bid_current_label.add_theme_font_size_override("font_size", 13)
+	_bid_current_label.add_theme_font_size_override("font_size", 16)
 	_bid_current_label.add_theme_color_override("font_color", Color("#93A8B8"))
 	_bid_header_hbox.add_child(_bid_current_label)
 
 	_bid_buttons_scroll = ScrollContainer.new()
 	_bid_buttons_scroll.name = "BidButtonsScroll"
-	_bid_buttons_scroll.custom_minimum_size = Vector2(0, 84)
+	_bid_buttons_scroll.custom_minimum_size = Vector2(0, 96)
 	_bid_buttons_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_bid_buttons_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_bid_buttons_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -450,11 +458,11 @@ func _build_table_ui() -> void:
 	
 	_hand_fan = load("res://addons/card_fan/src/card_set.tscn").instantiate()
 	_hand_fan.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_hand_fan.fan_card_width = 162.0
-	_hand_fan.fan_card_height = 250.0
-	_hand_fan.fan_radius = 520.0
-	_hand_fan.fan_max_angle = 36.0
-	_hand_fan.fan_max_angle_step = 5.5
+	_hand_fan.fan_card_width = 194.0
+	_hand_fan.fan_card_height = 300.0
+	_hand_fan.fan_radius = 580.0
+	_hand_fan.fan_max_angle = 38.0
+	_hand_fan.fan_max_angle_step = 5.8
 	_hand_fan.fan_center_y_ratio = 0.62
 	_hand_fan.tap_select_only = true
 	_hand_fan.interaction_enabled = true
@@ -487,14 +495,14 @@ func _create_seat_Cluster(parent: Control, seat_idx: int, title: String, accent:
 	# of the rotated card fan instead of sitting outside it at the screen edge.
 	if seat_idx == 1: # Left opponent: toward the table centre (right).
 		wrapper.offset_left = 6
-		wrapper.offset_right = 134
-		wrapper.offset_top = -58
-		wrapper.offset_bottom = 62
+		wrapper.offset_right = 150
+		wrapper.offset_top = -62
+		wrapper.offset_bottom = 66
 	elif seat_idx == 3: # Right opponent: toward the table centre (left).
-		wrapper.offset_left = -134
+		wrapper.offset_left = -150
 		wrapper.offset_right = -6
-		wrapper.offset_top = -58
-		wrapper.offset_bottom = 62
+		wrapper.offset_top = -62
+		wrapper.offset_bottom = 66
 	parent.add_child(wrapper)
 	wrapper.z_index = 8 # Profile/avatar overlays must sit above the card-back fan.
 	_seat_panels[seat_idx] = wrapper
@@ -555,12 +563,12 @@ func _create_seat_Cluster(parent: Control, seat_idx: int, title: String, accent:
 	vbox.add_child(info_vbox)
 
 	var name_panel := PanelContainer.new()
-	name_panel.custom_minimum_size = Vector2(124, 28)
-	name_panel.add_theme_stylebox_override("panel", _create_box_style(accent.lightened(0.5), accent, 6, 2))
+	name_panel.custom_minimum_size = Vector2(144, 34)
+	name_panel.add_theme_stylebox_override("panel", _create_box_style(Color(0.14, 0.04, 0.06, 0.90), accent, 6, 2))
 	var name_lbl := Label.new()
 	name_lbl.text = str(initial_profile.get("display_name", title))
-	name_lbl.add_theme_font_size_override("font_size", 16)
-	name_lbl.add_theme_color_override("font_color", Color("#111111"))
+	name_lbl.add_theme_font_size_override("font_size", 18)
+	name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.clip_text = true
 	name_panel.add_child(name_lbl)
@@ -568,17 +576,17 @@ func _create_seat_Cluster(parent: Control, seat_idx: int, title: String, accent:
 	_seat_name_labels[seat_idx] = name_lbl
 
 	var status_panel := PanelContainer.new()
-	status_panel.custom_minimum_size = Vector2(88, 22)
+	status_panel.custom_minimum_size = Vector2(104, 26)
 	status_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var status_style := _create_box_style(Color.WHITE, accent, 6, 2)
+	var status_style := _create_box_style(Color(0.06, 0.09, 0.14, 0.92), accent, 6, 1)
 	status_style.corner_radius_top_left = 0
 	status_style.corner_radius_top_right = 0
 	status_panel.add_theme_stylebox_override("panel", status_style)
 
 	var status_lbl := Label.new()
 	status_lbl.text = "0"
-	status_lbl.add_theme_font_size_override("font_size", 13)
-	status_lbl.add_theme_color_override("font_color", Color("#333333"))
+	status_lbl.add_theme_font_size_override("font_size", 16)
+	status_lbl.add_theme_color_override("font_color", Color("#FF8A80"))
 	status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status_panel.add_child(status_lbl)
 	info_vbox.add_child(status_panel)
@@ -710,7 +718,7 @@ func _create_player_trump_marker(relative_seat: int, seat_anchor: Vector2) -> vo
 			marker.offset_top = -52
 			marker.offset_bottom = -14
 
-	var marker_style := _create_box_style(Color("#F4F7FA"), Color("#00BFD3"), 8, 2)
+	var marker_style := _create_box_style(Color(0.06, 0.10, 0.16, 0.95), Color("#00BFD3"), 8, 2)
 	marker.add_theme_stylebox_override("panel", marker_style)
 	var glyph := Label.new()
 	glyph.name = "TrumpChooserGlyph_%d" % relative_seat
@@ -718,7 +726,7 @@ func _create_player_trump_marker(relative_seat: int, seat_anchor: Vector2) -> vo
 	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	glyph.add_theme_font_size_override("font_size", 26)
-	glyph.add_theme_color_override("font_color", Color("#17232E"))
+	glyph.add_theme_color_override("font_color", Color("#29E7F5"))
 	marker.add_child(glyph)
 	_table_overlay.add_child(marker)
 	marker.visible = false
@@ -838,15 +846,19 @@ func _create_opponent_card_host(relative_seat: int, seat_anchor: Vector2) -> voi
 	fan.name = "OpponentCardFan_%d" % relative_seat
 	fan.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fan.z_index = 1
-	fan.custom_minimum_size = Vector2(360, 160)
-	fan.size = Vector2(360, 160)
-	fan.pivot_offset = Vector2(180, 80)
+	fan.anchor_left = seat_anchor.x
+	fan.anchor_right = seat_anchor.x
+	fan.anchor_top = seat_anchor.y
+	fan.anchor_bottom = seat_anchor.y
+	fan.custom_minimum_size = Vector2(400, 192)
+	fan.size = Vector2(400, 192)
+	fan.pivot_offset = Vector2(200, 96)
 
-	# Match the bottom hand's curve parameters while scaling the backs down
-	# slightly so all eight cards fit comfortably around the portrait seats.
-	fan.fan_card_width = 80.0
-	fan.fan_card_height = 113.0
-	fan.fan_radius = 430.0
+	# Match the bottom hand's curve parameters while scaling the backs up 20%
+	# so all eight cards remain clear and easy to read around portrait seats.
+	fan.fan_card_width = 96.0
+	fan.fan_card_height = 136.0
+	fan.fan_radius = 480.0
 	fan.fan_max_angle = 38.0
 	fan.fan_max_angle_step = 5.5
 	fan.fan_center_y_ratio = 0.88
@@ -866,28 +878,24 @@ func _create_opponent_card_host(relative_seat: int, seat_anchor: Vector2) -> voi
 	# All four fans use the same local geometry. Only the root transform differs:
 	# bottom = 0° (local player's existing fan), partner = 180°,
 	# left opponent = +90°, right opponent = -90°.
-	fan.anchor_left = seat_anchor.x
-	fan.anchor_right = seat_anchor.x
-	fan.anchor_top = seat_anchor.y
-	fan.anchor_bottom = seat_anchor.y
 	match relative_seat:
 		2: # Partner: horizontal fan above teammate, flipped toward the table.
-			fan.offset_left = -180.0
-			fan.offset_right = 180.0
-			fan.offset_top = -30.0
-			fan.offset_bottom = 130.0
+			fan.offset_left = -200.0
+			fan.offset_right = 200.0
+			fan.offset_top = -36.0
+			fan.offset_bottom = 156.0
 			fan.rotation = PI
 		1: # Left opponent: vertical fan to the right of the avatar, inward.
-			fan.offset_left = 30.0
-			fan.offset_right = 390.0
-			fan.offset_top = -80.0
-			fan.offset_bottom = 80.0
+			fan.offset_left = 20.0
+			fan.offset_right = 420.0
+			fan.offset_top = -96.0
+			fan.offset_bottom = 96.0
 			fan.rotation = PI * 0.5
 		3: # Right opponent: mirrored vertical fan to the left of the avatar.
-			fan.offset_left = -390.0
-			fan.offset_right = -30.0
-			fan.offset_top = -80.0
-			fan.offset_bottom = 80.0
+			fan.offset_left = -420.0
+			fan.offset_right = -20.0
+			fan.offset_top = -96.0
+			fan.offset_bottom = 96.0
 			fan.rotation = -PI * 0.5
 
 	_table_overlay.add_child(fan)
@@ -922,6 +930,7 @@ func _sync_deal_from_player_view(view: Dictionary, viewer_seat: int) -> void:
 		_hand_fan.clear_all_cards()
 		_trick_collection_queue.clear()
 		_trick_collection_in_progress = false
+		MultiplayerManager.set_trick_collection_busy(false)
 		_last_completed_trick_count = 0
 		_clear_trick_slots()
 		for relative_seat in [1, 2, 3]:
@@ -953,13 +962,15 @@ func _sync_deal_from_player_view(view: Dictionary, viewer_seat: int) -> void:
 			if not _last_dealt_local_card_ids.has(card_id):
 				local_new_ids.append(card_id)
 		local_new_ids = _sort_card_ids_by_suit(local_new_ids)
+		var is_initial_batch: bool = (_last_deal_hand_counts == [0, 0, 0, 0])
 		var batch: Dictionary = {
 			"deltas": deltas.duplicate(),
 			"local_card_ids": local_new_ids,
 			"dealer_seat": int(view.get("dealer_seat", 0)),
 			"viewer_seat": viewer_seat,
 			"generation": _deal_generation,
-			"hand_number": current_hand_number
+			"hand_number": current_hand_number,
+			"is_initial_batch": is_initial_batch
 		}
 		_deal_queue.append(batch)
 
@@ -974,6 +985,9 @@ func _run_clockwise_deal_queue() -> void:
 	if _deal_animation_running:
 		return
 	_deal_animation_running = true
+	if is_instance_valid(_hand_fan):
+		_hand_fan.interaction_enabled = false
+		_hand_fan.clear_interaction_state()
 	while not _deal_queue.is_empty():
 		var batch: Dictionary = _deal_queue.pop_front()
 		var batch_generation: int = int(batch.get("generation", -1))
@@ -989,9 +1003,16 @@ func _run_clockwise_deal_queue() -> void:
 		var local_card_cursor: int = 0
 		var batch_cancelled: bool = false
 		var batch_hand_number: int = int(batch.get("hand_number", -1))
+		var is_initial_batch: bool = bool(batch.get("is_initial_batch", false))
 		if batch_hand_number != _last_shuffle_hand_number:
-			AudioManager.play_sfx("deck_shuffle", 0.02, 0.30)
+			AudioManager.play_sfx("shuffle", 0.0, 0.50)
 			_last_shuffle_hand_number = batch_hand_number
+			# Let the entire 1.3x-quickened shuffle play before dealing the first card.
+			var shuffle_wait: float = maxf(AudioManager.get_sfx_length("shuffle"), 2.185) + 0.08
+			await get_tree().create_timer(shuffle_wait).timeout
+			if batch_generation != _deal_generation:
+				batch_cancelled = true
+				continue
 		# One card per player per pass, clockwise from the dealer's left.
 		for card_round in range(max_cards_to_deal):
 			if batch_generation != _deal_generation:
@@ -1005,16 +1026,20 @@ func _run_clockwise_deal_queue() -> void:
 				if card_round >= int(deltas[absolute_seat]):
 					continue
 				var relative_seat: int = _relative_seat_for_absolute(absolute_seat, viewer_seat)
+				var dealt_card: bool = false
 				if relative_seat == 0:
 					if local_card_cursor < local_card_ids.size():
 						_add_local_card_from_deck(int(local_card_ids[local_card_cursor]))
 						local_card_cursor += 1
-						# Each device hears the four cards arriving in its own hand,
-						# not a burst of 16 overlapping remote-seat deal clicks.
-						AudioManager.play_sfx("card_deal", 0.025, 0.44)
+						dealt_card = true
 				else:
 					_add_remote_card_from_deck(relative_seat)
-				await get_tree().create_timer(0.105).timeout
+					dealt_card = true
+				if dealt_card:
+					# Synchronize one crisp individual card-deal slide per dealt card
+					# via the dedicated single-channel DealAudioPlayer (no overlap).
+					AudioManager.play_deal_sfx(0.62 if relative_seat == 0 else 0.42, 0.03)
+				await get_tree().create_timer(0.115).timeout
 				if batch_generation != _deal_generation:
 					batch_cancelled = true
 					break
@@ -1029,10 +1054,18 @@ func _run_clockwise_deal_queue() -> void:
 				break
 			_add_local_card_from_deck(int(local_card_ids[local_card_cursor]))
 			local_card_cursor += 1
-			AudioManager.play_sfx("card_deal", 0.025, 0.44)
-		await get_tree().create_timer(0.12).timeout
-		_apply_local_hand_order(true)
+			AudioManager.play_deal_sfx(0.62, 0.03)
+			await get_tree().create_timer(0.115).timeout
+		# Wait for the final card's visual slide-in (fan_enter_duration = 0.4s) to land
+		# cleanly before re-enabling hover interaction or revealing controls.
+		await get_tree().create_timer(0.42).timeout
+		# Ensure hand order & z-index layering remain strictly sorted without
+		# playing redundant sort sounds when cards already entered their sorted slots.
+		_apply_local_hand_order(false)
 	_deal_animation_running = false
+	if is_instance_valid(_hand_fan):
+		_hand_fan.interaction_enabled = true
+		_hand_fan.clear_interaction_state()
 	_reconcile_remote_fans_to_latest_view()
 
 	# A newer state may have arrived while this batch was animating. Drain every
@@ -1095,7 +1128,14 @@ func _add_local_card_from_deck(card_id: int) -> void:
 	var texture_path: String = "res://Cards/simplecard_%s_%s.png" % [suit_name, asset_rank]
 	var texture: Texture2D = load(texture_path) as Texture2D if ResourceLoader.exists(texture_path) else null
 	var start_local: Vector2 = _deal_start_position_for_fan(_hand_fan)
-	var card_node: Control = _hand_fan.add_card_with_texture_from(texture, suit_name, int(asset_rank), start_local)
+	var existing_ids: Array[int] = []
+	for existing_card in _hand_fan.get_cards():
+		if is_instance_valid(existing_card) and existing_card.has_meta("domain_card_id"):
+			existing_ids.append(int(existing_card.get_meta("domain_card_id")))
+	existing_ids.append(card_id)
+	var sorted_ids: Array[int] = _sort_card_ids_by_suit(existing_ids)
+	var insert_index: int = sorted_ids.find(card_id)
+	var card_node: Control = _hand_fan.insert_card_with_texture_from(texture, suit_name, int(asset_rank), start_local, insert_index)
 	if is_instance_valid(card_node):
 		card_node.set_meta("domain_card_id", card_id)
 		card_node.set_meta("is_legal", false)
@@ -1152,7 +1192,7 @@ func _refresh_seat_profiles(view: Dictionary) -> void:
 
 func _stat_grid_cell(default_val: String, text_color: Color, bg_color: Color, is_top: bool) -> Label:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(66, 40)
+	panel.custom_minimum_size = Vector2(74, 42)
 	var style := StyleBoxFlat.new()
 	style.bg_color = bg_color
 	style.border_color = Color("#00D9E8").darkened(0.4)
@@ -1169,14 +1209,14 @@ func _stat_grid_cell(default_val: String, text_color: Color, bg_color: Color, is
 	lbl.text = default_val
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 21)
+	lbl.add_theme_font_size_override("font_size", 24)
 	lbl.add_theme_color_override("font_color", text_color)
 	panel.add_child(lbl)
 	return lbl
 
 func _stat_grid_header(title: String) -> PanelContainer:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(66, 26)
+	panel.custom_minimum_size = Vector2(74, 26)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.06, 0.12, 0.20, 0.55)
 	style.border_color = Color("#00D9E8").darkened(0.5)
@@ -1187,7 +1227,7 @@ func _stat_grid_header(title: String) -> PanelContainer:
 	lbl.text = title
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_font_size_override("font_size", 14)
 	lbl.add_theme_color_override("font_color", Color("#8EB8D0"))
 	panel.add_child(lbl)
 	return panel
@@ -1258,7 +1298,6 @@ func _get_live_hand_points(view: Dictionary) -> Array:
 
 func _on_player_view_updated(view: Dictionary) -> void:
 	var previous_view: Dictionary = _last_view.duplicate(true)
-	_process_audio_view_events(previous_view, view)
 	_last_view = view.duplicate(true)
 	var my_seat: int = int(view.get("viewer_seat", 0))
 	var turn_seat: int = int(view.get("current_turn_seat", 0))
@@ -1334,11 +1373,13 @@ func _on_player_view_updated(view: Dictionary) -> void:
 		update_seat_status(relative_seat, status_text)
 		
 	var is_my_turn: bool = my_seat == turn_seat
-	set_table_phase(phase == GameState.Phase.BIDDING, is_my_turn)
-	_status_banner.text = "DEALING" if (_deal_animation_running or bool(view.get("deal_animation_pending", false))) else ("YOUR TURN" if is_my_turn else "")
+	var deal_locked: bool = bool(view.get("deal_animation_pending", false)) or _deal_animation_running
+	set_table_phase(phase == GameState.Phase.BIDDING, is_my_turn and not deal_locked)
+	_status_banner.text = "DEALING" if deal_locked else ("YOUR TURN" if is_my_turn else "")
 	if is_my_turn and not _was_my_turn:
-		AudioManager.play_sfx("turn_alert")
 		HapticsManager.light_tap()
+		if phase == GameState.Phase.TRICK_PLAY and not deal_locked and not _trick_collection_in_progress and _trick_collection_queue.is_empty() and not AudioManager.is_voice_playing():
+			AudioManager.play_sfx("turn_alert", 0.015, 0.45)
 	_was_my_turn = is_my_turn
 	
 	var trick: Array = view.get("current_trick", [])
@@ -1347,13 +1388,22 @@ func _on_player_view_updated(view: Dictionary) -> void:
 	_update_trick_visuals(view, my_seat)
 	_rebuild_phase_controls(view, phase, is_my_turn)
 	_rebuild_hand(view, phase, my_seat, turn_seat)
+	_process_audio_view_events(previous_view, view)
 
 func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> void:
+	var current_session: String = str(current.get("session_id", ""))
+	var current_revision: int = int(current.get("state_revision", -1))
+	# Deduplicate repeated or out-of-order network/host state broadcasts.
+	if current_session == _last_audio_session_id and current_revision >= 0 and current_revision <= _last_audio_revision:
+		return
+	_last_audio_session_id = current_session
+	_last_audio_revision = current_revision
+
 	# First view is a baseline (for example after save recovery); never replay
 	# old bids or cards merely because the table scene was opened again.
 	if previous.is_empty():
 		return
-	if str(previous.get("session_id", "")) != str(current.get("session_id", "")):
+	if str(previous.get("session_id", "")) != current_session:
 		return
 
 	var previous_hand: int = int(previous.get("hand_number", -1))
@@ -1370,20 +1420,34 @@ func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> vo
 	var shared_count: int = mini(old_bids.size(), new_bids.size())
 	while common_prefix < shared_count and old_bids[common_prefix] == new_bids[common_prefix]:
 		common_prefix += 1
+	var voiced_turn_event: bool = false
 	for i in range(common_prefix, new_bids.size()):
 		var bid_event: Dictionary = new_bids[i]
 		var seat: int = int(bid_event.get("seat", 0))
 		var bid_type: String = str(bid_event.get("type", ""))
 		if bid_type == "BID":
 			AudioManager.play_bid_callout(int(bid_event.get("amount", 0)), seat)
+			voiced_turn_event = true
 		elif bid_type == "PASS":
-			AudioManager.play_sfx("bid_pass", 0.02, 0.32)
 			AudioManager.play_pass_callout(seat)
+			voiced_turn_event = true
 
 	var previous_multiplier: int = int(previous.get("stake_multiplier", GameState.StakeMultiplier.NORMAL))
 	var current_multiplier: int = int(current.get("stake_multiplier", GameState.StakeMultiplier.NORMAL))
+	var old_phase_for_stake: int = int(previous.get("phase", -1))
+	var new_phase_for_stake: int = int(current.get("phase", -1))
 	if current_multiplier > previous_multiplier:
-		AudioManager.play_sfx("redouble" if current_multiplier >= GameState.StakeMultiplier.REDOUBLED else "double", 0.02, 0.9)
+		if current_multiplier >= GameState.StakeMultiplier.REDOUBLED:
+			AudioManager.play_quadruple_callout()
+		else:
+			AudioManager.play_double_callout()
+	elif old_phase_for_stake == GameState.Phase.DOUBLE_DECISION and (
+		(new_phase_for_stake == GameState.Phase.DOUBLE_DECISION and int(previous.get("current_turn_seat", -1)) != int(current.get("current_turn_seat", -1)))
+		or new_phase_for_stake == GameState.Phase.TRICK_PLAY
+	):
+		AudioManager.play_hold_callout()
+	elif old_phase_for_stake == GameState.Phase.REDOUBLE_DECISION and new_phase_for_stake == GameState.Phase.TRICK_PLAY:
+		AudioManager.play_hold_callout()
 
 	if not bool(previous.get("trump_selected", false)) and bool(current.get("trump_selected", false)):
 		AudioManager.play_sfx("trump_select", 0.02, 0.72)
@@ -1393,9 +1457,9 @@ func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> vo
 	var previous_pair_team: int = int(previous.get("pair_declared_by_team", -1))
 	var current_pair_team: int = int(current.get("pair_declared_by_team", -1))
 	if previous_pair_team == -1 and current_pair_team >= 0:
-		AudioManager.play_sfx("pair_declared", 0.02, 0.9)
+		AudioManager.play_sfx("pair_declared", 0.02, 0.85)
 
-	# One crisp card sound per accepted play. Count the exact difference in total trick cards.
+	# One crisp card placement sound per accepted play. Count the exact difference in total trick cards.
 	var old_trick: Array = previous.get("current_trick", [])
 	var new_trick: Array = current.get("current_trick", [])
 	var old_completed: int = int(previous.get("completed_tricks_count", previous.get("completed_tricks", []).size()))
@@ -1406,7 +1470,7 @@ func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> vo
 	if new_completed <= old_completed + 1:
 		card_plays = clampi(new_total_cards - old_total_cards, 0, 4)
 	for i in range(card_plays):
-		AudioManager.play_sfx("card_play", 0.035, 0.9)
+		AudioManager.play_sfx("card_place", 0.035, 0.90)
 
 	# Result cue plays once when the authoritative state enters its result phase.
 	var old_phase: int = int(previous.get("phase", -1))
@@ -1417,12 +1481,12 @@ func _process_audio_view_events(previous: Dictionary, current: Dictionary) -> vo
 		if new_phase == GameState.Phase.MATCH_OVER:
 			var local_team: int = GameState.get_team(int(current.get("viewer_seat", 0)))
 			var won_match: bool = int(current.get("winning_team", -1)) == local_team
-			AudioManager.play_sfx("match_win" if won_match else "match_loss", 0.015, 0.9)
+			AudioManager.play_sfx("match_win" if won_match else "match_loss", 0.015, 0.85)
 		else:
 			var local_team: int = GameState.get_team(int(current.get("viewer_seat", 0)))
 			var bidding_team: int = int(summary.get("bidding_team", -1))
 			var local_won_hand: bool = contract_made if local_team == bidding_team else not contract_made
-			AudioManager.play_sfx("hand_win" if local_won_hand else "hand_loss", 0.02, 0.82)
+			AudioManager.play_sfx("hand_win" if local_won_hand else "hand_loss", 0.02, 0.80)
 
 
 func _update_trick_visuals(view: Dictionary, viewer_seat: int) -> void:
@@ -1442,10 +1506,15 @@ func _update_trick_visuals(view: Dictionary, viewer_seat: int) -> void:
 
 	if completed_count > _last_completed_trick_count:
 		for i in range(_last_completed_trick_count, mini(completed_count, completed.size())):
-			_trick_collection_queue.append(completed[i].duplicate(true))
+			var record: Dictionary = completed[i]
+			if not bool(record.get("tram", false)):
+				_trick_collection_queue.append(record.duplicate(true))
 		_last_completed_trick_count = completed_count
-		if not _trick_collection_in_progress:
+		if not _trick_collection_in_progress and not _trick_collection_queue.is_empty():
+			MultiplayerManager.set_trick_collection_busy(true)
 			_process_trick_collection_queue(viewer_seat)
+		elif not _trick_collection_in_progress:
+			_render_trick_entries(view.get("current_trick", []), viewer_seat)
 		return
 
 	if not _trick_collection_in_progress and _trick_collection_queue.is_empty():
@@ -1476,16 +1545,18 @@ func _process_trick_collection_queue(viewer_seat: int) -> void:
 	if _trick_collection_in_progress:
 		return
 	_trick_collection_in_progress = true
+	MultiplayerManager.set_trick_collection_busy(true)
 	while not _trick_collection_queue.is_empty():
 		var completed: Dictionary = _trick_collection_queue.pop_front()
 		var plays: Array = completed.get("plays", [])
 		var winner_seat: int = int(completed.get("winner_seat", -1))
 		var winner_relative: int = _relative_seat_for_absolute(winner_seat, viewer_seat)
 		var cards: Array[Control] = _render_trick_entries(plays, viewer_seat)
-		await get_tree().create_timer(0.48).timeout
+		await get_tree().create_timer(0.45).timeout
 		if cards.size() == 4 and _trick_slots.has(winner_relative):
 			var winner_seat_panel: Control = _seat_panels.get(winner_relative) as Control
 			var destination: Vector2 = winner_seat_panel.get_global_rect().get_center() if is_instance_valid(winner_seat_panel) else _trick_slots[winner_relative].get_global_rect().get_center()
+			AudioManager.play_sfx("trick_collect", 0.02, 0.80)
 			var tweens: Array[Tween] = []
 			for i in range(cards.size()):
 				var card: Control = cards[i]
@@ -1498,10 +1569,10 @@ func _process_trick_collection_queue(viewer_seat: int) -> void:
 				var tween: Tween = create_tween()
 				tween.set_trans(Tween.TRANS_CUBIC)
 				tween.set_ease(Tween.EASE_IN)
-				tween.tween_interval(float(i) * 0.035)
-				tween.tween_property(card, "global_position", target_position, 0.42)
-				tween.parallel().tween_property(card, "scale", Vector2(0.28, 0.28), 0.42)
-				tween.parallel().tween_property(card, "modulate:a", 0.15, 0.42)
+				tween.tween_interval(float(i) * 0.03)
+				tween.tween_property(card, "global_position", target_position, 0.40)
+				tween.parallel().tween_property(card, "scale", Vector2(0.28, 0.28), 0.40)
+				tween.parallel().tween_property(card, "modulate:a", 0.15, 0.40)
 				tweens.append(tween)
 			if not tweens.is_empty():
 				await tweens[tweens.size() - 1].finished
@@ -1509,16 +1580,18 @@ func _process_trick_collection_queue(viewer_seat: int) -> void:
 			if is_instance_valid(card):
 				card.queue_free()
 		_clear_trick_slots()
-		AudioManager.play_sfx("trick_collect", 0.02, 0.82)
+		await get_tree().create_timer(0.14).timeout
 	_trick_collection_in_progress = false
-	_render_trick_entries(_last_view.get("current_trick", []), int(_last_view.get("viewer_seat", viewer_seat)))
+	MultiplayerManager.set_trick_collection_busy(false)
+	var latest_viewer: int = int(_last_view.get("viewer_seat", viewer_seat))
+	_render_trick_entries(_last_view.get("current_trick", []), latest_viewer)
 
-	# Reveal the HAND COMPLETE / MATCH OVER panel only after final collection.
-	var final_phase: int = int(_last_view.get("phase", -1))
-	if final_phase in [GameState.Phase.HAND_SCORING, GameState.Phase.MATCH_OVER]:
-		var final_viewer: int = int(_last_view.get("viewer_seat", viewer_seat))
+	# Unlock next trick lead, Pair prompt, TRAM, or HAND COMPLETE / MATCH OVER only after collection ends.
+	if not _last_view.is_empty():
+		var final_phase: int = int(_last_view.get("phase", -1))
 		var final_turn: int = int(_last_view.get("current_turn_seat", -1))
-		_rebuild_phase_controls(_last_view, final_phase, final_viewer == final_turn)
+		_rebuild_phase_controls(_last_view, final_phase, latest_viewer == final_turn)
+		_rebuild_hand(_last_view, final_phase, latest_viewer, final_turn)
 
 func _rebuild_hand(view: Dictionary, phase: int, my_seat: int, turn_seat: int) -> void:
 	if not is_instance_valid(_hand_fan):
@@ -1531,7 +1604,7 @@ func _rebuild_hand(view: Dictionary, phase: int, my_seat: int, turn_seat: int) -
 	_rendered_hand_number = hand_number
 
 	var legal: Array[int] = []
-	var is_local_turn: bool = phase == GameState.Phase.TRICK_PLAY and my_seat == turn_seat and not bool(view.get("deal_animation_pending", false)) and not _deal_animation_running
+	var is_local_turn: bool = phase == GameState.Phase.TRICK_PLAY and my_seat == turn_seat and not bool(view.get("deal_animation_pending", false)) and not _deal_animation_running and not _trick_collection_in_progress and _trick_collection_queue.is_empty()
 	if is_local_turn:
 		legal = AIController._get_legal_cards_from_view(view, hand)
 
@@ -1558,7 +1631,8 @@ func _rebuild_hand(view: Dictionary, phase: int, my_seat: int, turn_seat: int) -
 
 	# Card creation is centralized in the clockwise deal queue so the local
 	# face-up cards arrive in the same sequence as the three remote card backs.
-	_apply_local_hand_order(false)
+	if not _deal_animation_running:
+		_apply_local_hand_order(false)
 	_refresh_hint_card_glow()
 
 
@@ -1566,7 +1640,7 @@ func _on_fan_card_clicked(card: Control) -> void:
 	if not is_instance_valid(card) or _last_view.is_empty():
 		return
 
-	if _deal_animation_running or bool(_last_view.get("deal_animation_pending", false)):
+	if _deal_animation_running or bool(_last_view.get("deal_animation_pending", false)) or _trick_collection_in_progress or not _trick_collection_queue.is_empty():
 		return
 	var phase: int = int(_last_view.get("phase", -1))
 	var viewer_seat: int = int(_last_view.get("viewer_seat", -1))
@@ -1585,7 +1659,7 @@ func _on_fan_card_clicked(card: Control) -> void:
 	var legal_cards: Array[int] = AIController._get_legal_cards_from_view(_last_view, hand)
 	if not legal_cards.has(card_id):
 		_show_hint_popup("Follow the lead suit. Only legal cards can be played.")
-		AudioManager.play_sfx("error")
+		AudioManager.play_sfx("card_invalid_drop", 0.02, 0.90)
 		return
 
 	_clear_hint_presentation()
@@ -1629,11 +1703,12 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 	_action_panel.visible = false
 
 	var deal_locked: bool = bool(view.get("deal_animation_pending", false)) or _deal_animation_running
-	_center_bid_box.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
+	var trick_locked: bool = _trick_collection_in_progress or not _trick_collection_queue.is_empty()
+	_center_bid_box.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked and not trick_locked
 	if is_instance_valid(_bid_header_hbox):
-		_bid_header_hbox.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked
+		_bid_header_hbox.visible = phase == GameState.Phase.BIDDING and is_my_turn and not deal_locked and not trick_locked
 
-	if deal_locked:
+	if deal_locked or trick_locked:
 		_action_panel.visible = false
 		return
 
@@ -1643,14 +1718,14 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 		_action_panel.anchor_right = 0.5
 		_action_panel.anchor_top = 0.60
 		_action_panel.anchor_bottom = 0.60
-		_action_panel.offset_left = -132
-		_action_panel.offset_right = 132
-		_action_panel.offset_top = -58
-		_action_panel.offset_bottom = 58
+		_action_panel.offset_left = -150
+		_action_panel.offset_right = 150
+		_action_panel.offset_top = -68
+		_action_panel.offset_bottom = 68
 
 		var title := Label.new()
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		title.add_theme_font_size_override("font_size", 17)
+		title.add_theme_font_size_override("font_size", 20)
 		title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 		_action_content.add_child(title)
 
@@ -1673,6 +1748,7 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 						var detail := Label.new()
 						detail.text = "%s takes +%d" % [winner_name, int(last_record.get("points", 0))]
 						detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+						detail.add_theme_font_size_override("font_size", 16)
 						detail.add_theme_color_override("font_color", Color("#EAF5F7"))
 						_action_content.add_child(detail)
 				return
@@ -1687,6 +1763,7 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				delta
 			]
 			result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			result_label.add_theme_font_size_override("font_size", 18)
 			result_label.add_theme_color_override("font_color", Color("#EAF5F7"))
 			_action_content.add_child(result_label)
 
@@ -1706,7 +1783,7 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				RulesEngine.start_new_hand(state, (state.dealer_seat + 1) % 4, state.match_seed)
 				MultiplayerManager._broadcast_state_from_host()
 			)
-			next_button.custom_minimum_size = Vector2(180, 44)
+			next_button.custom_minimum_size = Vector2(200, 48)
 			_action_content.add_child(next_button)
 		else:
 			title.text = "MATCH OVER"
@@ -1714,12 +1791,13 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			var winner_label := Label.new()
 			winner_label.text = "BLUE TEAM WINS" if winning_team == 0 else ("CORAL TEAM WINS" if winning_team == 1 else "FINAL RESULT")
 			winner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			winner_label.add_theme_font_size_override("font_size", 18)
 			winner_label.add_theme_color_override("font_color", Color("#EAF5F7"))
 			_action_content.add_child(winner_label)
 			var menu_button := _make_action_button("RETURN TO MENU", func() -> void:
 				return_to_menu.emit()
 			)
-			menu_button.custom_minimum_size = Vector2(180, 44)
+			menu_button.custom_minimum_size = Vector2(200, 48)
 			_action_content.add_child(menu_button)
 		return
 
@@ -1738,9 +1816,10 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 					_center_bid_box.visible = false
 					MultiplayerManager.submit_local_action({"type": "BID", "amount": chosen})
 				)
-				bid_button.custom_minimum_size = Vector2(0, 36)
+				bid_button.custom_minimum_size = Vector2(0, 42)
 				bid_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				bid_button.disabled = chosen < minimum
+				bid_button.add_theme_font_size_override("font_size", 20)
 				bid_button.add_theme_color_override("font_color", Color("#EAF5F7"))
 				bid_button.add_theme_color_override("font_disabled_color", Color("#60717D"))
 				bid_button.add_theme_stylebox_override("normal", _create_box_style(Color("#172A39"), Color("#31586A"), 8, 1))
@@ -1757,8 +1836,9 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				_center_bid_box.visible = false
 				MultiplayerManager.submit_local_action({"type": "PASS_BID"})
 			)
-			pass_button.custom_minimum_size = Vector2(160, 38)
+			pass_button.custom_minimum_size = Vector2(170, 44)
 			pass_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			pass_button.add_theme_font_size_override("font_size", 18)
 			pass_button.add_theme_color_override("font_color", Color("#19222B"))
 			pass_button.add_theme_stylebox_override("normal", _create_box_style(Color("#E6B84F"), Color("#F4D178"), 8, 1))
 			pass_button.add_theme_stylebox_override("hover", _create_box_style(Color("#F2CC70"), Color("#FFF0B8"), 8, 2))
@@ -1772,14 +1852,14 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.anchor_right = 0.5
 			_action_panel.anchor_top = 0.58
 			_action_panel.anchor_bottom = 0.58
-			_action_panel.offset_left = -150
-			_action_panel.offset_right = 150
-			_action_panel.offset_top = -54
-			_action_panel.offset_bottom = 54
+			_action_panel.offset_left = -160
+			_action_panel.offset_right = 160
+			_action_panel.offset_top = -60
+			_action_panel.offset_bottom = 60
 			var title := Label.new()
 			title.text = "CHOOSE TRUMP"
 			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			title.add_theme_font_size_override("font_size", 16)
+			title.add_theme_font_size_override("font_size", 18)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			
@@ -1792,9 +1872,9 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				var symbol: String = str(CardDefs.SUIT_SYMBOLS[suit_id])
 				var ink: Color = ThemePalette.SUIT_CRIMSON if suit_id in [CardDefs.Suit.HEARTS, CardDefs.Suit.DIAMONDS] else ThemePalette.ACCENT_CYAN
 				button.text = symbol
-				button.custom_minimum_size = Vector2(60, 56)
+				button.custom_minimum_size = Vector2(66, 60)
 				button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				button.add_theme_font_size_override("font_size", 34)
+				button.add_theme_font_size_override("font_size", 36)
 				button.add_theme_color_override("font_color", ink)
 				button.add_theme_stylebox_override("normal", _create_box_style(Color("#132738"), Color("#26556C"), 10, 1))
 				button.add_theme_stylebox_override("hover", _create_box_style(Color("#1A3E52"), Color("#00D9E8"), 10, 2))
@@ -1811,14 +1891,14 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.anchor_right = 0.5
 			_action_panel.anchor_top = 0.58
 			_action_panel.anchor_bottom = 0.58
-			_action_panel.offset_left = -120
-			_action_panel.offset_right = 120
-			_action_panel.offset_top = -46
-			_action_panel.offset_bottom = 46
+			_action_panel.offset_left = -130
+			_action_panel.offset_right = 130
+			_action_panel.offset_top = -52
+			_action_panel.offset_bottom = 52
 			var title := Label.new()
 			title.text = "DOUBLE?"
 			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			title.add_theme_font_size_override("font_size", 16)
+			title.add_theme_font_size_override("font_size", 18)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			var row := HBoxContainer.new()
@@ -1839,14 +1919,14 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.anchor_right = 0.5
 			_action_panel.anchor_top = 0.58
 			_action_panel.anchor_bottom = 0.58
-			_action_panel.offset_left = -120
-			_action_panel.offset_right = 120
-			_action_panel.offset_top = -46
-			_action_panel.offset_bottom = 46
+			_action_panel.offset_left = -130
+			_action_panel.offset_right = 130
+			_action_panel.offset_top = -52
+			_action_panel.offset_bottom = 52
 			var title := Label.new()
 			title.text = "REDOUBLE?"
 			title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			title.add_theme_font_size_override("font_size", 16)
+			title.add_theme_font_size_override("font_size", 18)
 			title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(title)
 			var row := HBoxContainer.new()
@@ -1868,7 +1948,8 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				var tram_button := _make_action_button("TRAM  ·  THE REST ARE MINE", func() -> void:
 					MultiplayerManager.submit_local_action({"type": "TRAM"})
 				)
-				tram_button.custom_minimum_size = Vector2(224, 48)
+				tram_button.custom_minimum_size = Vector2(250, 52)
+				tram_button.add_theme_font_size_override("font_size", 18)
 				tram_button.add_theme_color_override("font_color", Color("#19222B"))
 				tram_button.add_theme_stylebox_override("normal", _create_box_style(Color("#E6B84F"), Color("#F4D178"), 10, 1))
 				tram_button.add_theme_stylebox_override("hover", _create_box_style(Color("#F2CC70"), Color("#FFF0B8"), 10, 2))
@@ -1878,16 +1959,16 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 				_action_panel.anchor_right = 0.5
 				_action_panel.anchor_top = 0.73
 				_action_panel.anchor_bottom = 0.73
-				_action_panel.offset_left = -124
-				_action_panel.offset_right = 124
-				_action_panel.offset_top = -32
-				_action_panel.offset_bottom = 32
+				_action_panel.offset_left = -135
+				_action_panel.offset_right = 135
+				_action_panel.offset_top = -36
+				_action_panel.offset_bottom = 36
 
 		GameState.Phase.PAIR_DECISION:
 			var pair_title := Label.new()
 			pair_title.text = "ROYAL PAIR?"
 			pair_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			pair_title.add_theme_font_size_override("font_size", 16)
+			pair_title.add_theme_font_size_override("font_size", 18)
 			pair_title.add_theme_color_override("font_color", ThemePalette.ACCENT_CYAN)
 			_action_content.add_child(pair_title)
 
@@ -1911,17 +1992,17 @@ func _rebuild_phase_controls(view: Dictionary, phase: int, is_my_turn: bool) -> 
 			_action_panel.anchor_right = 0.5
 			_action_panel.anchor_top = 0.73
 			_action_panel.anchor_bottom = 0.73
-			_action_panel.offset_left = -124
-			_action_panel.offset_right = 124
-			_action_panel.offset_top = -42
-			_action_panel.offset_bottom = 42
+			_action_panel.offset_left = -135
+			_action_panel.offset_right = 135
+			_action_panel.offset_top = -46
+			_action_panel.offset_bottom = 46
 
 func _make_action_button(value: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = value
-	button.custom_minimum_size = Vector2(80, 42)
+	button.custom_minimum_size = Vector2(88, 48)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.add_theme_font_size_override("font_size", 15)
+	button.add_theme_font_size_override("font_size", 18)
 	button.add_theme_color_override("font_color", Color("#EAF5F7"))
 	button.add_theme_color_override("font_hover_color", Color("#00FFFF"))
 	button.add_theme_color_override("font_pressed_color", Color("#FFFFFF"))

@@ -127,8 +127,8 @@ static func _decide_redouble(view: Dictionary, hand: Array[int]) -> Dictionary:
 	return {"type": "CALL_REDOUBLE", "redouble": (trump_count >= 5 and has_trump_jack)}
 
 static func _decide_trick_action(view: Dictionary, hand: Array[int], difficulty: int) -> Dictionary:
-	# TRAM is available only when the authoritative host has proved that all
-	# remaining tricks are guaranteed for this seat.
+	# TRAM is available only when the authoritative host has mathematically
+	# proved that all remaining tricks are guaranteed for this seat's partnership.
 	if bool(view.get("tram_available", false)):
 		return {"type": "TRAM"}
 

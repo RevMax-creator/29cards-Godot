@@ -9,6 +9,7 @@ signal seat_connection_changed(seat: int, is_connected_human: bool)
 const GAME_PORT: int = 29030
 const NON_TRICK_GRACE_SEC: float = 8.0
 const AI_THINK_DELAY_SEC: float = 0.55
+const UI_TRICK_COLLECTION_MAX_WAIT_SEC: float = 2.5
 
 var is_offline_solo: bool = true
 var is_authoritative_host: bool = true
@@ -31,6 +32,14 @@ var _cached_encrypted_envelope: Dictionary = {}
 var _cached_my_key_share: Dictionary = {}
 var _migration_collected_shares: Array[Dictionary] = []
 var _ai_turn_cooldown: float = 0.0
+var ui_trick_collection_busy: bool = false
+var _ui_trick_collection_elapsed: float = 0.0
+
+func set_trick_collection_busy(busy: bool) -> void:
+	ui_trick_collection_busy = busy
+	_ui_trick_collection_elapsed = 0.0
+	if busy:
+		_ai_turn_cooldown = 0.0
 
 func start_solo_ai_match(difficulty: int, resume_saved: bool = false) -> void:
 	is_offline_solo = true
@@ -41,16 +50,21 @@ func start_solo_ai_match(difficulty: int, resume_saved: bool = false) -> void:
 
 	if resume_saved and SaveManager.has_valid_solo_save():
 		authoritative_state = SaveManager.load_solo_save()
+		PlayerProfile.initialize_match_ai_profiles(authoritative_state.match_seed)
 	else:
 		authoritative_state = GameState.new()
 		authoritative_state.session_id = "SOLO_%d" % Time.get_unix_time_from_system()
 		authoritative_state.match_seed = int(Time.get_unix_time_from_system())
 		authoritative_state.seat_is_ai = [false, true, true, true]
+		PlayerProfile.initialize_match_ai_profiles(authoritative_state.match_seed)
 		var dealer_rng := RandomNumberGenerator.new()
 		dealer_rng.seed = authoritative_state.match_seed ^ 0x29A11
 		var initial_dealer: int = dealer_rng.randi_range(0, 3)
 		RulesEngine.start_new_hand(authoritative_state, initial_dealer, authoritative_state.match_seed)
 
+	_ai_turn_cooldown = 0.0
+	ui_trick_collection_busy = false
+	_ui_trick_collection_elapsed = 0.0
 	_broadcast_state_from_host()
 
 func host_multiplayer_room() -> Error:
@@ -114,10 +128,28 @@ func _process(delta: float) -> void:
 		authoritative_state.seat_is_ai[seat] = true
 		_broadcast_state_from_host()
 
-	# 2. Do not let the authoritative AI play ahead of the visual deal.
-	# The deal animation can take longer than AI_THINK_DELAY_SEC.
+	# 2. Do not let the authoritative AI play ahead of the visual deal or
+	# while the 4 played cards are still sitting on the table being collected.
 	if authoritative_state.deal_animation_pending:
 		_ai_turn_cooldown = 0.0
+		return
+
+	if ui_trick_collection_busy:
+		_ui_trick_collection_elapsed += delta
+		if _ui_trick_collection_elapsed < UI_TRICK_COLLECTION_MAX_WAIT_SEC:
+			_ai_turn_cooldown = 0.0
+			return
+		ui_trick_collection_busy = false
+		_ui_trick_collection_elapsed = 0.0
+
+	# Pace AI auction/stake turns cleanly behind spoken bid/pass/double/hold voice
+	# announcements so voices never pile up multiple turns behind the UI.
+	if authoritative_state.phase in [
+		GameState.Phase.BIDDING,
+		GameState.Phase.DOUBLE_DECISION,
+		GameState.Phase.REDOUBLE_DECISION
+	] and AudioManager.is_voice_playing():
+		_ai_turn_cooldown = minf(_ai_turn_cooldown, AI_THINK_DELAY_SEC - 0.22)
 		return
 
 	# 3. Drive AI turns
@@ -146,6 +178,8 @@ func _process(delta: float) -> void:
 		if authoritative_state.seat_is_ai[turn_seat] and not _disconnect_grace_timers.has(turn_seat):
 			if authoritative_state.phase == GameState.Phase.TRICK_PLAY and RulesEngine.check_and_apply_automatic_trump_reveal(authoritative_state):
 				_broadcast_state_from_host()
+				_ai_turn_cooldown = 0.15
+				return
 			_ai_turn_cooldown += delta
 			if _ai_turn_cooldown >= AI_THINK_DELAY_SEC:
 				_ai_turn_cooldown = 0.0

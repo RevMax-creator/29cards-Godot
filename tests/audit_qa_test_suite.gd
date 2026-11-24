@@ -19,6 +19,8 @@ func _ready() -> void:
 	_test_card_sorting_sound_contract()
 	_test_card_play_and_trick_collect_sound_contract()
 	_test_bidding_panel_ui_dimensions_and_layout()
+	_test_enlarged_cards_and_trick_corner_overlap()
+	_test_pass_22_17_audio_pipeline()
 	print("==================================================")
 	print("QA TEST RESULTS: %d PASSED | %d FAILED" % [_passed, _failed])
 	get_tree().quit(0 if _failed == 0 else 1)
@@ -64,8 +66,9 @@ func _test_bidding_voice_announcements() -> void:
 	var phrase_29: String = AudioManager._bid_phrase(29)
 	_assert_true(phrase_29.is_empty(), "B-02: Bid 29 has no phrase and is not a legal bid")
 
-	# Verify pass callout stream exists
+	# Verify pass, hold, double, and quadruple callout streams exist
 	_assert_true(AudioManager._voice_streams.has("pass"), "B-03: Pass callout stream is present")
+	_assert_true(AudioManager._voice_streams.has("hold") and AudioManager._voice_streams.has("double") and AudioManager._voice_streams.has("quadruple"), "B-06: Hold, Double, and Quadruple callout streams are present")
 
 	# Test calling play_bid_callout for 15..28 does not crash or throw
 	AudioManager._voice_queue.clear()
@@ -112,6 +115,20 @@ func _test_card_sorting_sound_contract() -> void:
 	# Call _apply_local_hand_order(false) as done during rebuild_hand
 	screen._apply_local_hand_order(false)
 	_assert_true(true, "D-02: Redrawing hand calls _apply_local_hand_order(false) safely without playing sort sound")
+
+	# Verify sorted card insertion during dealing keeps strict z_index and tree order
+	var fan: Control = screen._hand_fan
+	var c0: Control = fan.insert_card_with_texture_from(null, "spade", 1, Vector2.ZERO, 0)
+	var c2: Control = fan.insert_card_with_texture_from(null, "heart", 13, Vector2.ZERO, 1)
+	var c1: Control = fan.insert_card_with_texture_from(null, "spade", 10, Vector2.ZERO, 1)
+	fan.hovered_card = c0
+	fan.clear_interaction_state()
+	var z_order_ok: bool = (
+		fan.cards.size() == 3 and fan.cards[0] == c0 and fan.cards[1] == c1 and fan.cards[2] == c2
+		and c0.z_index == 0 and c1.z_index == 1 and c2.z_index == 2
+		and fan.cards_container.get_child(0) == c0 and fan.cards_container.get_child(1) == c1 and fan.cards_container.get_child(2) == c2
+	)
+	_assert_true(z_order_ok, "D-03: CardFan sorted insertion and clear_interaction_state maintain strict left-to-right z_index and tree order")
 
 	screen.queue_free()
 
@@ -184,5 +201,97 @@ func _test_bidding_panel_ui_dimensions_and_layout() -> void:
 			pass_found = true
 			break
 	_assert_true(pass_found, "F-09: SinglePassRow with PASS button is present in bidding panel")
+
+	screen.queue_free()
+
+func _test_enlarged_cards_and_trick_corner_overlap() -> void:
+	var screen_scene: PackedScene = load("res://src/ui/main_table_screen.tscn")
+	var screen: MainTableScreen = screen_scene.instantiate() as MainTableScreen
+	add_child(screen)
+
+	_assert_true(screen._trick_card_size == Vector2(130, 182), "G-01: Played table card size enlarged +20%% to 130x182 (was 108x152)")
+	_assert_true(is_equal_approx(screen._hand_fan.fan_card_width, 194.0) and is_equal_approx(screen._hand_fan.fan_card_height, 300.0), "G-02: Local player hand cards enlarged +20%% to 194x300 (was 162x250)")
+
+	var all_remote_enlarged: bool = true
+	for rel_seat in [1, 2, 3]:
+		var remote_fan: Control = screen._opponent_card_fans.get(rel_seat) as Control
+		if remote_fan == null or not is_equal_approx(remote_fan.fan_card_width, 96.0) or not is_equal_approx(remote_fan.fan_card_height, 136.0):
+			all_remote_enlarged = false
+	_assert_true(all_remote_enlarged, "G-03: All remote seat fans (left, partner, right) enlarged +20%% to 96x136 (was 80x113)")
+
+	# Verify corner-overlapping diamond geometry on the actual trick slots
+	var top_rect := Rect2(screen._trick_slots[2].position, screen._trick_slots[2].size)
+	var bottom_rect := Rect2(screen._trick_slots[0].position, screen._trick_slots[0].size)
+	var left_rect := Rect2(screen._trick_slots[1].position, screen._trick_slots[1].size)
+	var right_rect := Rect2(screen._trick_slots[3].position, screen._trick_slots[3].size)
+
+	var top_right_overlap := top_rect.intersection(right_rect)
+	var top_left_overlap := top_rect.intersection(left_rect)
+	var bottom_right_overlap := bottom_rect.intersection(right_rect)
+	var bottom_left_overlap := bottom_rect.intersection(left_rect)
+	var corners_overlap_cleanly: bool = (
+		is_equal_approx(top_right_overlap.size.x, 16.0) and is_equal_approx(top_right_overlap.size.y, 22.0) and
+		is_equal_approx(top_left_overlap.size.x, 16.0) and is_equal_approx(top_left_overlap.size.y, 22.0) and
+		is_equal_approx(bottom_right_overlap.size.x, 16.0) and is_equal_approx(bottom_right_overlap.size.y, 22.0) and
+		is_equal_approx(bottom_left_overlap.size.x, 16.0) and is_equal_approx(bottom_left_overlap.size.y, 22.0)
+	)
+	_assert_true(corners_overlap_cleanly, "G-04: All 4 trick slots lightly overlap at corners by 16x22 px")
+	_assert_true(not top_rect.intersects(bottom_rect) and not left_rect.intersects(right_rect), "G-05: Opposite trick cards do not overlap, keeping the center window open")
+
+	screen.queue_free()
+
+func _test_pass_22_17_audio_pipeline() -> void:
+	_assert_true(AudioManager.BGM_STREAM_PATH == "res://assets/audio/music/background_music.ogg", "H-01: BGM centralized under res://assets/audio/music/background_music.ogg")
+	_assert_true(AudioManager.SFX_PATHS.get("shuffle", "") == "res://assets/audio/sfx/shuffle.ogg", "H-02: Shuffle SFX centralized as shuffle.ogg")
+	var shuffle_len: float = AudioManager.get_sfx_length("shuffle")
+	_assert_true(shuffle_len >= 2.0 and shuffle_len <= 2.35, "H-02b: Shuffle SFX quickened 1.3x (~2.185s)")
+	_assert_true(AudioManager.SFX_PATHS.get("card_place", "") == "res://assets/audio/sfx/card_place.ogg", "H-03: Card placement SFX centralized as card_place.ogg")
+
+	var deal_player: AudioStreamPlayer = AudioManager.get_node_or_null("DealAudioPlayer") as AudioStreamPlayer
+	_assert_true(deal_player != null and deal_player.bus == AudioManager.BUS_SFX, "H-04: Dedicated DealAudioPlayer exists on SFX bus for non-overlapping deals")
+	AudioManager.play_deal_sfx(0.55)
+	_assert_true(AudioManager._sounds.has("shuffle") and AudioManager._sounds.has("card_deal") and AudioManager._sounds.has("card_sort") and AudioManager._sounds.has("card_place") and AudioManager._sounds.has("trick_collect") and AudioManager._sounds.has("error") and AudioManager._sounds.has("card_invalid_drop"), "H-05: All core card-table SFX streams loaded in AudioManager")
+	var deal_variants_loaded: int = 0
+	for k in AudioManager.DEAL_SFX_VARIANTS:
+		if AudioManager._sounds.has(k):
+			deal_variants_loaded += 1
+	var play_variants_loaded: int = 0
+	for k in AudioManager.PLAY_CARD_SFX_VARIANTS:
+		if AudioManager._sounds.has(k):
+			play_variants_loaded += 1
+	_assert_true(deal_variants_loaded == 8, "H-05b: All 8 deal card-slide variants (1..8) loaded in AudioManager")
+	_assert_true(play_variants_loaded == 12, "H-05c: All 12 card-play variants (card-slide 1..8 + card-place 1..4) loaded in AudioManager")
+
+	# Verify duplicate/stale revision deduplication in MainTableScreen audio pipeline
+	var screen_scene: PackedScene = load("res://src/ui/main_table_screen.tscn")
+	var screen: MainTableScreen = screen_scene.instantiate() as MainTableScreen
+	add_child(screen)
+
+	var v1: Dictionary = {"session_id": "S_AUDIO", "state_revision": 5, "hand_number": 1, "bidding_history": [], "current_trick": [], "completed_tricks": [], "viewer_seat": 0, "current_turn_seat": 1}
+	var v2: Dictionary = {"session_id": "S_AUDIO", "state_revision": 6, "hand_number": 1, "bidding_history": [{"seat": 1, "type": "BID", "amount": 16}], "current_trick": [], "completed_tricks": [], "viewer_seat": 0, "current_turn_seat": 2}
+	AudioManager._voice_queue.clear()
+	screen._process_audio_view_events({}, v1)
+	screen._process_audio_view_events(v1, v2)
+	var after_v2_rev: int = screen._last_audio_revision
+	# Replay v2 with same revision — must be deduplicated cleanly
+	var q_before_dup: int = AudioManager._voice_queue.size()
+	screen._process_audio_view_events(v1, v2)
+	var q_after_dup: int = AudioManager._voice_queue.size()
+	_assert_true(after_v2_rev == 6 and q_after_dup == q_before_dup, "H-06: Repeated or stale state_revision broadcasts are strictly deduplicated")
+	AudioManager._voice_queue.clear()
+
+	# Verify trick collection gate in MultiplayerManager holds AI play until collection finishes
+	MultiplayerManager.set_trick_collection_busy(true)
+	_assert_true(MultiplayerManager.ui_trick_collection_busy, "H-07: Trick collection gate blocks AI/next plays until table cards are collected")
+	MultiplayerManager.set_trick_collection_busy(false)
+	_assert_true(not MultiplayerManager.ui_trick_collection_busy, "H-08: Trick collection gate clears after collection completes")
+
+	# Verify voice playback lock query (active right after H-06 bid 16 playback, idle once stopped)
+	_assert_true(AudioManager.is_voice_playing(), "H-09a: AudioManager.is_voice_playing() reports active while voice plays")
+	if is_instance_valid(AudioManager._voice_player):
+		AudioManager._voice_player.stop()
+	AudioManager._voice_is_playing = false
+	AudioManager._voice_queue.clear()
+	_assert_true(not AudioManager.is_voice_playing(), "H-09b: AudioManager.is_voice_playing() reports idle once voice stops")
 
 	screen.queue_free()

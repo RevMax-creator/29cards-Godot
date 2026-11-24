@@ -672,32 +672,151 @@ func _on_player_view_updated(view: Dictionary) -> void:
 	if revision == _results_session_revision:
 		return
 	_results_session_revision = revision
-	call_deferred("_show_match_results", view.duplicate(true))
+	# Defer transition slightly to ensure any final trick collection animation
+	# on the active table has completed gracefully.
+	get_tree().create_timer(1.4).timeout.connect(func() -> void:
+		_show_match_results(view.duplicate(true))
+	)
 
 func _show_match_results(view: Dictionary) -> void:
 	var page := _clear_page()
 	var winning_team := int(view.get("winning_team", -1))
-	var player_team := GameState.get_team(int(view.get("viewer_seat", 0)))
+	var viewer_seat := int(view.get("viewer_seat", 0))
+	var player_team := GameState.get_team(viewer_seat)
 	var player_won := winning_team == player_team
-	_add_heading(page, "MATCH COMPLETE", "VICTORY" if player_won else "MATCH OVER", "Your partnership " + ("reached the winning target." if player_won else "did not reach the winning target this match."))
-	var score_panel := _panel(page)
-	var result_identity := HBoxContainer.new()
-	result_identity.alignment = BoxContainer.ALIGNMENT_CENTER
-	result_identity.add_theme_constant_override("separation", 12)
-	score_panel.add_child(result_identity)
-	var result_avatar := TextureRect.new()
-	result_avatar.custom_minimum_size = Vector2(56, 56)
-	result_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	result_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	result_avatar.texture = PlayerProfile.get_avatar_texture()
-	result_identity.add_child(result_avatar)
-	result_identity.add_child(_label(PlayerProfile.display_name, 18, ThemePalette.TEXT_PRIMARY))
-	score_panel.add_child(_label("FINAL MATCH SCORE", 22, ThemePalette.ACCENT_CYAN))
-	var scores: Array = view.get("match_game_points", [0, 0])
-	score_panel.add_child(_label("TEAM 1     %+d" % int(scores[0]), 32, ThemePalette.ACCENT_WARM_GOLD if winning_team == 0 else ThemePalette.TEXT_PRIMARY))
-	score_panel.add_child(_label("TEAM 2     %+d" % int(scores[1]), 32, ThemePalette.ACCENT_WARM_GOLD if winning_team == 1 else ThemePalette.TEXT_PRIMARY))
 	var summary: Dictionary = view.get("last_hand_summary", {})
+	var scores: Array = view.get("match_game_points", [0, 0])
+
+	# 1. Hero Header
+	var title_text := "🏆 VICTORY!" if player_won else "DEFEAT"
+	var subtitle_text := "Congratulations! Your partnership conquered the table!" if player_won else "Defending team claimed victory. Better luck in the next match!"
+	var title_color := ThemePalette.ACCENT_WARM_GOLD if player_won else Color("#FF6E6E")
+	
+	_add_heading(page, "MATCH RESULTS", title_text, subtitle_text)
+	
+	# 2. Main Match Score Hero Panel
+	var hero_panel := _panel(page)
+	hero_panel.add_child(_label("FINAL MATCH OUTCOME", 14, ThemePalette.ACCENT_CYAN))
+
+	var team_row := HBoxContainer.new()
+	team_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	team_row.add_theme_constant_override("separation", 16)
+	hero_panel.add_child(team_row)
+
+	# Team 1 (Blue) Card
+	var t1_card := PanelContainer.new()
+	t1_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var t1_border := ThemePalette.ACCENT_WARM_GOLD if winning_team == 0 else Color("#1A4B6E")
+	t1_card.add_theme_stylebox_override("panel", ThemePalette.create_panel_style(Color("#0B2236"), t1_border, 14, 2))
+	var t1_box := VBoxContainer.new()
+	t1_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	t1_box.add_theme_constant_override("separation", 4)
+	t1_card.add_child(t1_box)
+	t1_box.add_child(_label("TEAM 1 (BLUE)" + (" 👑" if winning_team == 0 else ""), 13, Color("#64B5F6")))
+	t1_box.add_child(_label("%+d" % int(scores[0]), 36, ThemePalette.ACCENT_WARM_GOLD if winning_team == 0 else ThemePalette.TEXT_PRIMARY))
+	t1_box.add_child(_label("WINNER" if winning_team == 0 else "RUNNER UP", 11, ThemePalette.TEXT_MUTED))
+	team_row.add_child(t1_card)
+
+	# Team 2 (Coral) Card
+	var t2_card := PanelContainer.new()
+	t2_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var t2_border := ThemePalette.ACCENT_WARM_GOLD if winning_team == 1 else Color("#6E2B2B")
+	t2_card.add_theme_stylebox_override("panel", ThemePalette.create_panel_style(Color("#2B1214"), t2_border, 14, 2))
+	var t2_box := VBoxContainer.new()
+	t2_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	t2_box.add_theme_constant_override("separation", 4)
+	t2_card.add_child(t2_box)
+	t2_box.add_child(_label("TEAM 2 (CORAL)" + (" 👑" if winning_team == 1 else ""), 13, Color("#FF6E6E")))
+	t2_box.add_child(_label("%+d" % int(scores[1]), 36, ThemePalette.ACCENT_WARM_GOLD if winning_team == 1 else ThemePalette.TEXT_PRIMARY))
+	t2_box.add_child(_label("WINNER" if winning_team == 1 else "RUNNER UP", 11, ThemePalette.TEXT_MUTED))
+	team_row.add_child(t2_card)
+
+	# 3. 4 Players Grid with Avatars & Team Indicators
+	var roster_panel := _panel(page)
+	roster_panel.add_child(_label("TABLE PLAYERS", 14, ThemePalette.ACCENT_CYAN))
+
+	var player_grid := GridContainer.new()
+	player_grid.columns = 2
+	player_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_grid.add_theme_constant_override("h_separation", 10)
+	player_grid.add_theme_constant_override("v_separation", 10)
+	roster_panel.add_child(player_grid)
+
+	for rel_seat in range(4):
+		var abs_seat := posmod(viewer_seat + rel_seat, 4)
+		var team := GameState.get_team(abs_seat)
+		var p_profile: Dictionary = PlayerProfile.get_profile() if rel_seat == 0 else PlayerProfile.get_ai_profile(rel_seat)
+
+		var p_card := PanelContainer.new()
+		p_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var card_bg := Color("#0F283E") if team == 0 else Color("#38171C")
+		var card_edge := Color("#4FA2E8") if team == 0 else Color("#FF6E6E")
+		p_card.add_theme_stylebox_override("panel", ThemePalette.create_panel_style(card_bg, card_edge, 10, 1))
+
+		var p_row := HBoxContainer.new()
+		p_row.add_theme_constant_override("separation", 8)
+		p_card.add_child(p_row)
+
+		var p_avatar := TextureRect.new()
+		p_avatar.custom_minimum_size = Vector2(44, 44)
+		p_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		p_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		p_avatar.texture = PlayerProfile.get_avatar_texture(str(p_profile.get("avatar_id", "byte")))
+		p_row.add_child(p_avatar)
+
+		var p_details := VBoxContainer.new()
+		p_details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		p_details.alignment = BoxContainer.ALIGNMENT_CENTER
+		var display_str: String = str(p_profile.get("display_name", "Player"))
+		if rel_seat == 0:
+			display_str += " (You)"
+		var p_name := _label(display_str, 14, ThemePalette.TEXT_PRIMARY)
+		p_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		p_details.add_child(p_name)
+		var team_str: String = "Team 1 (Blue)" if team == 0 else "Team 2 (Coral)"
+		var p_team_lbl := _label(team_str, 11, Color("#64B5F6") if team == 0 else Color("#FF6E6E"))
+		p_team_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		p_details.add_child(p_team_lbl)
+		p_row.add_child(p_details)
+
+		player_grid.add_child(p_card)
+
+	# 4. Final Hand Breakdown Card
 	if not summary.is_empty():
-		score_panel.add_child(_label("Last contract: %s  •  Game points: %+d" % ["MADE" if bool(summary.get("contract_succeeded", false)) else "FAILED", int(summary.get("game_point_delta", 0))], 18, ThemePalette.TEXT_MUTED))
-	page.add_child(_button("PLAY AGAIN", Callable(self, "_show_solo_difficulty"), true))
-	page.add_child(_button("MAIN MENU", Callable(self, "_show_main_menu")))
+		var breakdown_panel := _panel(page)
+		breakdown_panel.add_child(_label("FINAL HAND BREAKDOWN", 14, ThemePalette.ACCENT_CYAN))
+
+		var contract_made: bool = bool(summary.get("contract_succeeded", false))
+		var bidding_team: int = int(summary.get("bidding_team", 0))
+		var target: int = int(summary.get("final_target", 0))
+		var captured: int = int(summary.get("bidder_points", 0))
+		var defenders: int = int(summary.get("defender_points", 0))
+		var delta: int = int(summary.get("game_point_delta", 0))
+
+		var status_str: String = "CONTRACT %s (%+d GAME POINTS)" % ["MADE" if contract_made else "MISSED", delta]
+		var status_color := ThemePalette.ACCENT_WARM_GOLD if contract_made else Color("#FF6E6E")
+		breakdown_panel.add_child(_label(status_str, 16, status_color))
+
+		var detail_grid := GridContainer.new()
+		detail_grid.columns = 2
+		detail_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		detail_grid.add_theme_constant_override("h_separation", 16)
+		detail_grid.add_theme_constant_override("v_separation", 4)
+		breakdown_panel.add_child(detail_grid)
+
+		detail_grid.add_child(_label("Contract Target:", 13, ThemePalette.TEXT_MUTED))
+		detail_grid.add_child(_label("%d Points" % target, 13, ThemePalette.TEXT_PRIMARY))
+		detail_grid.add_child(_label("Declaring Team Captured:", 13, ThemePalette.TEXT_MUTED))
+		detail_grid.add_child(_label("%d / 29 Points" % captured, 13, ThemePalette.TEXT_PRIMARY))
+		detail_grid.add_child(_label("Defending Team Captured:", 13, ThemePalette.TEXT_MUTED))
+		detail_grid.add_child(_label("%d / 29 Points" % defenders, 13, ThemePalette.TEXT_PRIMARY))
+
+	# 5. Actions
+	_add_flexible_space(page)
+	var play_again := _button("PLAY AGAIN", Callable(self, "_show_solo_difficulty"), true)
+	play_again.custom_minimum_size.y = 60
+	page.add_child(play_again)
+	
+	var main_menu := _button("MAIN MENU", Callable(self, "_show_main_menu"))
+	main_menu.custom_minimum_size.y = 54
+	page.add_child(main_menu)

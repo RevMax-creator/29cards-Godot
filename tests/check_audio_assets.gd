@@ -3,24 +3,34 @@ extends SceneTree
 func _init() -> void:
 	print("=== AUDIO ASSETS DECODE & INTEGRITY TEST ===")
 	var sfx_paths: Dictionary = {
-		"deck_shuffle": "res://assets/audio/sfx/deck_shuffle.ogg",
-		"card_deal": "res://assets/audio/sfx/card_deal.ogg",
+		"shuffle": "res://assets/audio/sfx/shuffle.ogg",
+		"card_deal": "res://assets/audio/sfx/card_slide_1.ogg",
+		"card_slide_1": "res://assets/audio/sfx/card_slide_1.ogg",
+		"card_slide_2": "res://assets/audio/sfx/card_slide_2.ogg",
+		"card_slide_3": "res://assets/audio/sfx/card_slide_3.ogg",
+		"card_slide_4": "res://assets/audio/sfx/card_slide_4.ogg",
+		"card_slide_5": "res://assets/audio/sfx/card_slide_5.ogg",
+		"card_slide_6": "res://assets/audio/sfx/card_slide_6.ogg",
+		"card_slide_7": "res://assets/audio/sfx/card_slide_7.ogg",
+		"card_slide_8": "res://assets/audio/sfx/card_slide_8.ogg",
+		"card_place_2": "res://assets/audio/sfx/card_place_2.ogg",
+		"card_place_3": "res://assets/audio/sfx/card_place_3.ogg",
+		"card_place_4": "res://assets/audio/sfx/card_place_4.ogg",
 		"card_sort": "res://assets/audio/sfx/card_sort.ogg",
-		"card_play": "res://assets/audio/sfx/card_play.ogg",
+		"card_place": "res://assets/audio/sfx/card_place.ogg",
 		"trick_collect": "res://assets/audio/sfx/trick_collect.ogg",
 		"turn_alert": "res://assets/audio/sfx/turn_alert.ogg",
 		"ui_click": "res://assets/audio/sfx/ui_click.ogg",
 		"bid_pass": "res://assets/audio/sfx/bid_pass.ogg",
 		"trump_select": "res://assets/audio/sfx/trump_select.ogg",
 		"trump_reveal": "res://assets/audio/sfx/trump_reveal.ogg",
-		"double": "res://assets/audio/sfx/double.ogg",
-		"redouble": "res://assets/audio/sfx/redouble.ogg",
 		"pair_declared": "res://assets/audio/sfx/pair_declared.ogg",
 		"hand_win": "res://assets/audio/sfx/hand_win.ogg",
 		"hand_loss": "res://assets/audio/sfx/hand_loss.ogg",
 		"match_win": "res://assets/audio/sfx/match_win.ogg",
 		"match_loss": "res://assets/audio/sfx/match_loss.ogg",
-		"error": "res://assets/audio/sfx/error.ogg"
+		"error": "res://assets/audio/sfx/error.ogg",
+		"card_invalid_drop": "res://assets/audio/sfx/card_invalid_drop.ogg"
 	}
 	var failed: int = 0
 	for key in sfx_paths.keys():
@@ -50,7 +60,16 @@ func _init() -> void:
 	else:
 		print("[PASS] Voice pass (length: %.3fs)" % pass_stream.get_length())
 
-	var bgm_path := "res://assets/audio/card_table_ambient.ogg"
+	for extra_voice in ["hold", "double", "quadruple"]:
+		var extra_path := "res://assets/audio/voice/%s.ogg" % extra_voice
+		var extra_stream := load(extra_path) as AudioStream
+		if extra_stream == null:
+			printerr("[FAIL] Could not load voice: ", extra_voice, " at ", extra_path)
+			failed += 1
+		else:
+			print("[PASS] Voice %s (length: %.3fs)" % [extra_voice, extra_stream.get_length()])
+
+	var bgm_path := "res://assets/audio/music/background_music.ogg"
 	var bgm_stream := load(bgm_path) as AudioStream
 	if bgm_stream == null:
 		printerr("[FAIL] Could not load BGM ambient")
