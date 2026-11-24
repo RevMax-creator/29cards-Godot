@@ -144,7 +144,7 @@ func _build_logo_fan() -> Control:
 	card_two.texture = load("res://Cards/simplecard_spade_2.png") as Texture2D
 	card_two.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	card_two.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	card_two.size = Vector2(250, 343)
+	card_two.size = Vector2(412.5, 514.5)
 	card_two.pivot_offset = card_two.size * 0.5
 	card_two.mouse_filter = Control.MOUSE_FILTER_STOP
 	card_two.rotation = deg_to_rad(-12.0)
@@ -155,7 +155,7 @@ func _build_logo_fan() -> Control:
 	card_nine.texture = load("res://Cards/simplecard_heart_9.png") as Texture2D
 	card_nine.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	card_nine.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	card_nine.size = Vector2(250, 343)
+	card_nine.size = Vector2(412.5, 514.5)
 	card_nine.pivot_offset = card_nine.size * 0.5
 	card_nine.mouse_filter = Control.MOUSE_FILTER_STOP
 	card_nine.rotation = deg_to_rad(9.0)
